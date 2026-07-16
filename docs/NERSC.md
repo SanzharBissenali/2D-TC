@@ -61,6 +61,9 @@ Partition: both use `-q shared` (partition `shared_gp`) with `-G 1` — jobs sha
 node and are charged only for the requested fraction (~¼ node), not a whole
 exclusive node (`-q regular` → `gpu_ss11`). NQS uses the 1 GPU; ED is CPU/memory-
 bound but must still request `-G 1` under the GPU-only `m5340_g` allocation.
+The shared GPU queue requires **exactly 32 cores per GPU** (`-c 32`) and gives the
+matching ~¼-node memory (~55 GB) automatically — do NOT add `--mem`, as it gets
+converted to a core count and pushes the request past 32 cores (submission error).
 
 Timing: 1 h walltime each. Each script **skips any `hz` whose output already
 exists**, so it's resumable — if it hits the wall, just resubmit and it continues

@@ -11,7 +11,6 @@
 #SBATCH -N 1
 #SBATCH -G 1
 #SBATCH -c 32
-#SBATCH --mem=96G
 #SBATCH -J tc_ed
 #SBATCH -o logs/ed_%j.out
 

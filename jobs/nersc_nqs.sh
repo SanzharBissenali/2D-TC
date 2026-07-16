@@ -8,7 +8,6 @@
 #SBATCH -N 1
 #SBATCH -G 1
 #SBATCH -c 32
-#SBATCH --mem=64G
 #SBATCH -J tc_nqs
 #SBATCH -o logs/nqs_%j.out
 
