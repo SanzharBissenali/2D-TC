@@ -2,6 +2,7 @@
 Module for time-dependent variational principle (TDVP) optimization.
 """
 
+import time
 import jax
 import jax.numpy as jnp
 import netket as nk
@@ -44,6 +45,8 @@ def run_tdvp(
     t = t_start
     
     for step in loop:
+        step_start = time.time()
+
         # Compute energy and gradient
         E, f = vstate.expect_and_grad(hamiltonian)
         
@@ -82,8 +85,12 @@ def run_tdvp(
             for callback in callbacks:
                 callback(vstate, step, t, config)
         
-        # Update progress bar description
-        loop.set_description(f"Energy: {E.mean:.6f} ± {E.error_of_mean:.6f}")
+        # Update progress bar description (V-score = N·Var/⟨E⟩², matches the JSON)
+        vscore = float(jnp.real(config['N'] * E.variance / E.mean**2))
+        step_time = time.time() - step_start
+        loop.set_description(
+            f"E: {E.mean:.6f} ± {E.error_of_mean:.6f} | Vscore: {vscore:.3e} | {step_time:.2f}s/step"
+        )
         
         # Update time
         t = t + dt
