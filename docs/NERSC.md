@@ -46,19 +46,27 @@ python -c "import jax; print(jax.devices())"   # expect a CudaDevice
 
 ## Running jobs
 
-Job scripts live in `jobs/` and are SLURM arrays over the 7-point `hz` sweep
+Each job in `jobs/` runs the **full 7-point `hz` sweep sequentially in one job**
 (`hz ∈ {0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30}` at fixed `hx=0`, L=4 OBC):
 ```bash
 mkdir -p logs
-sbatch --array=0-6 jobs/nersc_ed.sh     # ED benchmark  -> results/ed/
-sbatch --array=0-6 jobs/nersc_nqs.sh    # NQS training  -> results/nqs/
+sbatch jobs/nersc_ed.sh     # ED benchmark  -> results/ed/   (~8 min/point)
+sbatch jobs/nersc_nqs.sh    # NQS training  -> results/nqs/  (~5 min/point)
 squeue --me
 ```
 Both scripts `module load conda && conda activate 2dtc`; edit that line if the env
 name changes. Outputs land under `results/`; logs under `logs/` (gitignored).
 
-Memory note: L=4 ED builds the 2^24 sparse operator (~tens of GB). If a node OOMs,
-add `--no-observables` (energies only) or reduce `--k` in `jobs/nersc_ed.sh`.
+Timing: 1 h walltime each. Each script **skips any `hz` whose output already
+exists**, so it's resumable — if it hits the wall, just resubmit and it continues
+from the missing points (and the interactively-computed `hz=0.1` is reused).
+
+NQS runs from inside `results/nqs/` (via `PYTHONPATH=$REPO`) so `main.py` writes
+`G-equiv_*.{json,mpack}` there instead of the repo root.
+
+Memory note: L=4 ED builds the 2^24 sparse operator (~tens of GB). If a node OOMs
+or ED runs long, add `--no-observables` (energies only, ~4 min/point) or reduce
+`--k` in `jobs/nersc_ed.sh`.
 
 ## Result flow (git as source of truth)
 Develop locally → push → **on NERSC**: `git pull` → `sbatch` → commit `results/` →
