@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Stray simulation outputs in the repo root (committed copies live under results/)
+/G-equiv_*.json
+/G-equiv_*.mpack
+/experiment_log.json
+logs/
+*.out
