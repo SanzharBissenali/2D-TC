@@ -68,5 +68,7 @@ python scripts/compare.py --nqs results/nqs/G-equiv_1_L4_hx0.00_hz0.10.json --ed
 
 ## Workflow (NERSC)
 Develop locally → commit/push to GitHub → pull on NERSC → `sbatch` jobs → commit
-results (`results/`) on NERSC → push → pull locally to analyze. Job scripts still
-need `-A <account>` and env-activation lines filled in (marked `TODO(nersc)`).
+results (`results/`) on NERSC → push → pull locally to analyze. **Full setup and
+run instructions: [`docs/NERSC.md`](docs/NERSC.md)** (allocation `m5340_g`, conda
+env `2dtc`, git-over-SSH, job submission). Env `2dtc` is created and working on the
+cluster as of 2026-07-16.
