@@ -6,9 +6,12 @@
 # Submit:  sbatch jobs/nersc_ed.sh
 #SBATCH -A m5340_g
 #SBATCH -C gpu
-#SBATCH -q regular
+#SBATCH -q shared
 #SBATCH -t 01:00:00
 #SBATCH -N 1
+#SBATCH -G 1
+#SBATCH -c 32
+#SBATCH --mem=96G
 #SBATCH -J tc_ed
 #SBATCH -o logs/ed_%j.out
 

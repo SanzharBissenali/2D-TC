@@ -57,6 +57,11 @@ squeue --me
 Both scripts `module load conda && conda activate 2dtc`; edit that line if the env
 name changes. Outputs land under `results/`; logs under `logs/` (gitignored).
 
+Partition: both use `-q shared` (partition `shared_gp`) with `-G 1` — jobs share a
+node and are charged only for the requested fraction (~¼ node), not a whole
+exclusive node (`-q regular` → `gpu_ss11`). NQS uses the 1 GPU; ED is CPU/memory-
+bound but must still request `-G 1` under the GPU-only `m5340_g` allocation.
+
 Timing: 1 h walltime each. Each script **skips any `hz` whose output already
 exists**, so it's resumable — if it hits the wall, just resubmit and it continues
 from the missing points (and the interactively-computed `hz=0.1` is reused).
