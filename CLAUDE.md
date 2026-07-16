@@ -33,6 +33,8 @@ captures the toric-code ground state under small/moderate field perturbations.
   ignoring the `--n_chains` flag — see `utils/config.setup_environment`.
 - Gotcha: `config.py` uses `N = 2·Lx·(Lx−1)` while `geometry.py` uses `2·Lx·Ly−Lx−Ly`;
   these agree only for square `Lx=Ly` (always the case here since `Ly:=Lx`).
+- Gotcha: `--use_custom_sampler` divides by the number of *bulk* (4-qubit) vertex stars,
+  so it crashes for small L with no bulk stars (e.g. L=2). Use the default local sampler there.
 
 ## Current work — first experiment array
 Validate the architecture at **L=4, OBC** against ED.
@@ -59,7 +61,10 @@ python scripts/compare.py --nqs results/nqs/G-equiv_1_L4_hx0.00_hz0.10.json --ed
 ## Environment
 - Pinned in `requirements.txt`: `netket==3.16.1.post1`, `jax==0.5.2`, `flax==0.10.4`.
 - **Not installed locally** on this laptop — runs on NERSC. L≤3 ED is laptop-feasible if netket is installed.
-- L=4 ED is memory-heavy (~tens of GB) → NERSC CPU node. NQS training → NERSC GPU node.
+- L=4 ED is memory-heavy (~tens of GB) → NERSC GPU node's CPUs. NQS training → NERSC GPU.
+- NERSC allocation is `m5340_g` (GPU-only), so everything charges to `-C gpu` nodes.
+- Pipeline validated locally at L=2 (ED→NQS→compare) with a throwaway venv:
+  `python3 -m venv <scratch>/venv && <venv>/bin/pip install -r requirements.txt`.
 
 ## Workflow (NERSC)
 Develop locally → commit/push to GitHub → pull on NERSC → `sbatch` jobs → commit
