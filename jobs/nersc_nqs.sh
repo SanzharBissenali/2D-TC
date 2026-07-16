@@ -1,9 +1,7 @@
 #!/bin/bash
-# NQS training sweep on a NERSC Perlmutter GPU node.
+# NQS training sweep on a NERSC Perlmutter GPU node (m5340_g).
 # Submit as a job array over the hz sweep:  sbatch --array=0-6 jobs/nersc_nqs.sh
-#
-# TODO(nersc): set -A <account>, and the conda/env activation for your NERSC setup.
-#SBATCH -A mXXXX
+#SBATCH -A m5340_g
 #SBATCH -C gpu
 #SBATCH -q regular
 #SBATCH -t 04:00:00
@@ -21,8 +19,9 @@ LX=4
 hz=${HZ_VALUES[$SLURM_ARRAY_TASK_ID]}
 jobid=$(printf "L%d_hx%.2f_hz%.2f" "$LX" "$HX" "$hz")
 
-# TODO(nersc): activate your environment, e.g.
-# module load conda && conda activate toric
+# TODO(nersc): confirm env name (create once via requirements.txt + jax-cuda12).
+module load conda
+conda activate 2dtc
 
 # Combo-small ansatz with the vertex-update custom sampler (paper L=4 defaults).
 python main.py \
