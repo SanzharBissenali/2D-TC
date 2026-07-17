@@ -97,8 +97,10 @@ case "$cmd" in
     submit)
         shift; job="${1:?usage: bash scripts/cluster.sh submit <jobfile> [sbatch args...]}"
         shift; sbatch_args=("$@")
-        preflight "$job" "${sbatch_args[@]}"
-        remote "mkdir -p logs && sbatch ${sbatch_args[*]} '$job'"
+        # bash 3.2 (macOS) errors on empty-array expansion under `set -u`; the
+        # ${arr[@]+...} guard expands to nothing when no overrides were passed.
+        preflight "$job" ${sbatch_args[@]+"${sbatch_args[@]}"}
+        remote "mkdir -p logs && sbatch ${sbatch_args[@]+${sbatch_args[*]}} '$job'"
         ;;
     cancel)
         shift; jid="${1:?usage: bash scripts/cluster.sh cancel <jobid>}"

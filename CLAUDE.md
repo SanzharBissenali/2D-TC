@@ -132,8 +132,13 @@ nonlinearity + sampler/optimizer/seed byte-identical. Kept on its own branch for
   P-independent and would change the CNN baseline too ⇒ deliberately out of scope (both-or-neither).
 - **Local verify done:** all changed files `py_compile`-clean; `scratchpad/validate_tf.py`
   (numpy-only) confirms the displacement table (no wrap, correct decode/range) and param counts
-  vs closed form. netket/jax NOT installed locally ⇒ end-to-end forward pass is a **gated** L=4
-  smoke run on NERSC (or a scratch venv).
+  vs closed form. netket/jax NOT installed locally ⇒ end-to-end forward pass runs on NERSC.
+- **Validated on GPU (2026-07-17):** transformer trains end-to-end at L=4 (interactive salloc):
+  1684 total params (Block1 448 + TF Block3 1236), energy descends cleanly, **~1.3 s/step**
+  steady-state (vs CNN ~0.58 @L4; first step ~29 s = JIT). Then submitted **batch job 56048230**
+  (`jobs/nersc_transformer.sh`, `-q shared -t4:00`): L=4 rel-err at hz∈{0.10,0.15,0.20,0.25,0.30}
+  × {cnn,tf,tfg} + L=6 hz=0.15 × {cnn,tf,tfg}, 18 runs, skip-if-complete. Analyze with
+  `scripts/erel_table.py` after `cluster.sh fetch` (kill criterion: L=4 rel-err ≤1e-5).
 
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
