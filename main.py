@@ -28,7 +28,8 @@ from model.networks import KernelManager, create_model
 from simulation.optimizer import run_tdvp, create_final_callback
 from simulation.observables import (
     create_wilson_loop_callback, create_magnetization_callback,
-    create_renyi_callback, create_2point_callback, create_conditional_callbacks
+    create_renyi_callback, create_2point_callback, create_conditional_callbacks,
+    create_plaquette_stabilizer_callback
 )
 from utils.config import setup_environment, parse_arguments, create_data_dict, save_data
 from utils.io import save_model, log_runtime, record_experiment_info
@@ -115,13 +116,14 @@ def main():
         )
         print("Using standard sampler with local updates")
     
-    # Create the variational state
+    # Create the variational state (explicit seed => deterministic paired CNN/transformer runs)
     vs = nk.vqs.MCState(
-        sa, 
-        model, 
+        sa,
+        model,
         n_samples=config['n_samples'],
         n_discard_per_chain=config['n_discard'],
-        chunk_size=config['chunk_size']
+        chunk_size=config['chunk_size'],
+        seed=config['seed']
     )
     
     # Update number of parameters in the data dictionary
@@ -169,6 +171,10 @@ def main():
 
     # Always calculate magnetizations at the end
     callback = create_magnetization_callback(geometry)
+    callback(vs, -1, -1, config)
+
+    # Final plaquette-stabilizer <B_p> (contamination diagnostic; ~1 on this cut)
+    callback = create_plaquette_stabilizer_callback(geometry)
     callback(vs, -1, -1, config)
     
     # Log runtime

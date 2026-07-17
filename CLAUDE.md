@@ -97,6 +97,44 @@ qubits, L=12→264, so no ED ground truth — use finite-size scaling of order p
   which stranded results when `commit` found nothing new, or when origin had diverged from
   code pushed off-cluster).
 
+## Current work — transformer Block-3 experiment (branch `transformer-symmetric-block`)
+Controlled swap: **replace ONLY Block 3** (the global-kernel invariant CNN + `Final` mean)
+with a **factored-attention transformer**, keeping Block 1 (non-inv CNN) + the Wilson
+nonlinearity + sampler/optimizer/seed byte-identical. Kept on its own branch for rollback.
+- **New module `model/transformer_block.py`:** `TransformerSymmetric` = embed (C=16→d) →
+  n_l pre-LN encoder blocks (factored MHA + 2-layer FFN, residuals) → sum-pool → log-cosh
+  readout. Factored attention `A_i=Σ_j α_{Δ(i,j)} V x_j` with REAL, position-only `α`.
+- **OBC α indexing (critical):** plaquettes live on an `(L-1)×(L-1)` OPEN grid, so `α` is
+  indexed by plain signed displacement via `plaquette_displacement_table` — a dense
+  `(2L-3)²`/head table, **no `jnp.roll`/modular wrap** (the NetKet ViT tutorial's roll2d is
+  PBC-only). No masking needed (every plaquette pair has an in-range displacement).
+- **Exact symmetry is preserved for free:** the stabilizer/gauge invariance comes from the
+  *retained* Wilson nonlinearity; any function of its output (CNN or transformer) inherits it.
+- **This is a parameterization-efficiency test, not expressivity:** factored attention =
+  a full-kernel conv (α) + a 1×1 conv (V) (arXiv:2503.10462), i.e. the same operator class as
+  the CNN it replaces. Expect equal ED-accuracy at fewer params; the param gap widens with L
+  (TF/CNN block-3 ≈ 1.00 at L=4 → 0.21 at L=10, since CNN grows as `136(L-1)²` but the α table
+  only as `(2L-3)²`).
+- **Selector:** `--symmetric_block {cnn,transformer}` (default `cnn`, byte-identical to before);
+  `--tf_layers/--tf_dmodel/--tf_heads/--tf_ffn_mult/--tf_activation/--tf_readout_K/
+  --tf_complex_output`; `--seed` (now threaded into `MCState` for paired runs). `tf_dmodel`
+  must be divisible by `tf_heads` (asserted in `create_model`).
+- **Arms:** primary `n_l=2,d=8,h=2,FFN 2d,ReLU` (~1236 params, +0.2% vs CNN's 1233 @L4);
+  bonus `n_l=2,d=6,h=2,FFN 4d,GELU` (~1108). Kill criteria: L=4 hz∈{0.15,0.30} rel-err ≤1e-5
+  at BOTH (ED in `results/ed/`, hz=0.15 E0=−25.13713); L=6 wall-clock-to-1e-5 ratio TF/CNN >3
+  ⇒ abandon. Job: `jobs/nersc_transformer.sh` (paired cnn/tf/tfg, seed 0).
+- **Instrumentation:** per-step wall-clock split `t_sample`/`t_grad`/`t_sr` (JSON; `optimizer.py`
+  uses `jax.block_until_ready` to defeat async dispatch); `⟨B_p⟩` mean/std diagnostic
+  (`observables.calculate_plaquette_stabilizer`, must stay ≈1 — contamination check).
+- **Optimizer note:** the repo's SR is a hand-rolled **dense P×P** QGT solve (`optimizer.py`),
+  so fewer params give a *super-linear* solve speedup ⇒ param-matching both arms also matches
+  solve cost. A `VMC_SR(use_ntk=True)` (SRt/minSR; `VMC_SRt` deprecated in netket 3.16) swap is
+  P-independent and would change the CNN baseline too ⇒ deliberately out of scope (both-or-neither).
+- **Local verify done:** all changed files `py_compile`-clean; `scratchpad/validate_tf.py`
+  (numpy-only) confirms the displacement table (no wrap, correct decode/range) and param counts
+  vs closed form. netket/jax NOT installed locally ⇒ end-to-end forward pass is a **gated** L=4
+  smoke run on NERSC (or a scratch venv).
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

@@ -47,32 +47,47 @@ def run_tdvp(
     for step in loop:
         step_start = time.time()
 
-        # Compute energy and gradient
+        # --- Per-step wall-clock split (block_until_ready defeats JAX async dispatch
+        # so each timer captures real work, not just the launch). This is a
+        # controlled variable: identical instrumentation on the CNN and transformer
+        # arms. Forcing vstate.samples first caches this step's MC samples, so the
+        # subsequent expect_and_grad / QGT reuse them and t_grad excludes sampling.
+        t0 = time.time()
+        samples = jax.block_until_ready(vstate.samples)
+        t_sample = time.time() - t0
+
+        # Compute energy and gradient (reuses the cached samples)
+        t0 = time.time()
         E, f = vstate.expect_and_grad(hamiltonian)
-        
-        # Compute quantum geometric tensor (QGT)
+        f = jax.block_until_ready(f)
+        t_grad = time.time() - t0
+
+        # Compute quantum geometric tensor (QGT) and the SR update direction
+        t0 = time.time()
         S = vstate.quantum_geometric_tensor(
             nk.optimizer.qgt.QGTJacobianDense(diag_shift=diag_shift, diag_scale=diag_scale)
         )
-        
-        # Compute update direction
         gamma_f = jax.tree.map(lambda x: -1.0 * x, f)
         dtheta, _ = S.solve(
             partial(nk.optimizer.solver.pinv_smooth, rtol=rtol, rtol_smooth=rtol_smooth),
             gamma_f
         )
-        
+        dtheta = jax.block_until_ready(dtheta)
+        t_sr = time.time() - t0
+
         # Update parameters
         vstate.parameters = jax.tree.map(lambda x, y: x + dt * y, vstate.parameters, dtheta)
-        
+
         # Save optimization data
         update_data(filename, [
-            "iters", "energy", "energy_eom", "energy_var", "tau_corr", 
-            "Rsplit", "Vscore", "MCMC_accepted", "MCMC_total"
+            "iters", "energy", "energy_eom", "energy_var", "tau_corr",
+            "Rsplit", "Vscore", "MCMC_accepted", "MCMC_total",
+            "t_sample", "t_grad", "t_sr"
         ], [
             t, E.mean, E.error_of_mean, E.variance, E.tau_corr,
             E.R_hat, config['N'] * E.variance / E.mean**2,
-            vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps
+            vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps,
+            t_sample, t_grad, t_sr
         ])
         
         # Check for NaN values

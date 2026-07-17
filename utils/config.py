@@ -95,6 +95,24 @@ def parse_arguments() -> Dict[str, Any]:
                         help='Comma-separated integers for invariant channels')
     parser.add_argument('--kernel_size', type=int, required=True, help='Kernel size for non-invariant CNN')
     parser.add_argument('--rescale', type=float, default=1.0, help='Rescale factor')
+
+    # Symmetric-block (Block 3) selector + factored-attention transformer hyperparameters.
+    # 'cnn' (default) = original global-kernel invariant CNN; 'transformer' = replace Block 3
+    # with a factored-attention encoder stack (Block 1 + Wilson nonlinearity unchanged).
+    parser.add_argument('--symmetric_block', choices=['cnn', 'transformer'], default='cnn',
+                        help='Architecture for Block 3 (post-Wilson): cnn or transformer')
+    parser.add_argument('--tf_layers', type=int, default=2, help='Transformer: number of encoder blocks')
+    parser.add_argument('--tf_dmodel', type=int, default=8, help='Transformer: embedding dimension d')
+    parser.add_argument('--tf_heads', type=int, default=2, help='Transformer: number of attention heads (must divide d)')
+    parser.add_argument('--tf_ffn_mult', type=int, default=2, help='Transformer: FFN hidden = tf_ffn_mult * d')
+    parser.add_argument('--tf_activation', choices=['relu', 'gelu'], default='relu',
+                        help='Transformer: FFN activation')
+    parser.add_argument('--tf_readout_K', type=int, default=0,
+                        help='Transformer: log-cosh readout hidden units K (0 => use d_model)')
+    parser.add_argument('--tf_complex_output', action='store_true',
+                        help='Transformer: complex (real+1j*imag) readout for sign-full runs')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='PRNG seed for the variational state (deterministic paired runs)')
     
     # MCMC sampling parameters
     parser.add_argument('--n_samples', type=int, default=2**13, help='Total number of samples')
@@ -133,7 +151,17 @@ def parse_arguments() -> Dict[str, Any]:
             'n_sweeps': 2**10 // 2,  # Will be overridden by N/2 if not provided
             'sim_time': 3.5,
             'rescale': 1.0,
-            'annotation': "cluster_16x16_run_hy"
+            'annotation': "cluster_16x16_run_hy",
+            # Symmetric-block / transformer defaults (legacy positional path)
+            'symmetric_block': 'cnn',
+            'tf_layers': 2,
+            'tf_dmodel': 8,
+            'tf_heads': 2,
+            'tf_ffn_mult': 2,
+            'tf_activation': 'relu',
+            'tf_readout_K': 0,
+            'tf_complex_output': False,
+            'seed': 0
         }
     else:
         args = vars(parser.parse_args())
@@ -193,16 +221,21 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
         "MCMC_total": [],
         "equiv_error": [],
         "equiv_error_bulk": [],
+        "t_sample": [],
+        "t_grad": [],
+        "t_sr": [],
         "order_params": {
-            "magnetization_Xmean": [], 
+            "magnetization_Xmean": [],
             "magnetization_Xstd": [],
-            "magnetization_Ymean": [], 
+            "magnetization_Ymean": [],
             "magnetization_Ystd": [],
-            "magnetization_Zmean": [], 
+            "magnetization_Zmean": [],
             "magnetization_Zstd": [],
             "2pointCorrelators": [],
             "WilsonBFFM": [],
-            "renyi2_entropy": []
+            "renyi2_entropy": [],
+            "Bp_mean": [],
+            "Bp_std": []
         },
         "sim_params": {
             "kind": ["G-NonInv"],
@@ -217,6 +250,15 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "BC": [config["bc"]],
             "n_chann_inv": config["channels_inv"],
             "n_chann_noninv": config["channels_noninv"],
+            "symmetric_block": [config.get("symmetric_block", "cnn")],
+            "tf_layers": [config.get("tf_layers", 0)],
+            "tf_dmodel": [config.get("tf_dmodel", 0)],
+            "tf_heads": [config.get("tf_heads", 0)],
+            "tf_ffn_mult": [config.get("tf_ffn_mult", 0)],
+            "tf_activation": [config.get("tf_activation", "none")],
+            "tf_readout_K": [config.get("tf_readout_K", 0)],
+            "tf_complex_output": [config.get("tf_complex_output", False)],
+            "seed": [config.get("seed", 0)],
             "rescale": [config["rescale"]],
             "kernel_size_noninv": [config["kernel_size"]],
             "kernel_size_inv": [config["kernel_size_inv"]],

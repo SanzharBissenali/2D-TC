@@ -613,7 +613,7 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
             repin, repout, kernel_manager, config['bc'], dtype
         ) for repin, repout in zip(channels_invariant, channels_invariant[1:])
     ]
-    
+
     # Create full model based on architecture type
     if architecture_type == "Combo":
         # Combo architecture
@@ -622,11 +622,44 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
                 repin, repout, kernel_manager, dtype
             ) for repin, repout in zip(channels_noninvariant, channels_noninvariant[1:])
         ]
-        
-        sequence = noninv_sequence + [
-            WilsonNonlinearity(plaq_all_tuple, rescale, dtype)
-        ] + inv_sequence + [Final()]
-        
+
+        if config.get('symmetric_block', 'cnn') == 'transformer':
+            # Replace ONLY Block 3 (the global-kernel invariant CNN + mean readout)
+            # with a factored-attention transformer. Block 1 (non-invariant CNN) and
+            # the Wilson nonlinearity are untouched. The transformer returns log psi
+            # directly, so no Final() mean is appended.
+            from model.transformer_block import (
+                TransformerSymmetric, plaquette_displacement_table
+            )
+            assert config['tf_dmodel'] % config['tf_heads'] == 0, (
+                f"tf_dmodel ({config['tf_dmodel']}) must be divisible by "
+                f"tf_heads ({config['tf_heads']})"
+            )
+            D, n_disp = plaquette_displacement_table(
+                kernel_manager.dg_p.positions, kernel_manager.Lx, kernel_manager.Ly
+            )
+            D_tuple = tuple(tuple(int(v) for v in row) for row in D)  # hashable
+            readout_K = config.get('tf_readout_K', 0) or config['tf_dmodel']
+            transformer_block = TransformerSymmetric(
+                n_layers=config['tf_layers'],
+                d_model=config['tf_dmodel'],
+                n_heads=config['tf_heads'],
+                n_disp=n_disp,
+                D=D_tuple,
+                readout_K=readout_K,
+                ffn_mult=config['tf_ffn_mult'],
+                activation=config['tf_activation'],
+                complex_output=config['tf_complex_output'],
+                dtype=dtype,
+            )
+            sequence = noninv_sequence + [
+                WilsonNonlinearity(plaq_all_tuple, rescale, dtype)
+            ] + [transformer_block]
+        else:
+            sequence = noninv_sequence + [
+                WilsonNonlinearity(plaq_all_tuple, rescale, dtype)
+            ] + inv_sequence + [Final()]
+
     else:
         # RPP architecture
         conv_net_plaq = CNN_noninvariant_plaq(

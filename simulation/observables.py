@@ -517,6 +517,49 @@ def z_connected_2point_correlator(
     )
 
 
+def calculate_plaquette_stabilizer(
+    vstate: nk.vqs.VariationalState,
+    geometry
+) -> Tuple[float, float]:
+    """Mean and std of the plaquette-stabilizer expectations <B_p> = <ZZZZ>.
+
+    On the sign-free (hz-only) cut every plaquette operator commutes with H, so
+    the ground state has <B_p> = 1 exactly; a deviation from 1 diagnoses that the
+    ansatz has leaked out of the B_p = +1 sector (a contaminated state). The
+    operators are diagonal 4-body Z strings, so this is cheap.
+
+    Returns (Bp_mean, Bp_std) over all plaquettes.
+    """
+    hi = vstate.hilbert
+    vals = []
+    for plaq in geometry.plaq_all:
+        idx = [j for j in plaq if j != -1]
+        op = 1
+        for j in idx:
+            op = op * nk.operator.spin.sigmaz(hi, j)
+        vals.append(vstate.expect(op).mean)
+    vals = np.array([float(np.real(v)) for v in vals])
+    return float(vals.mean()), float(vals.std())
+
+
+def create_plaquette_stabilizer_callback(geometry) -> Callable:
+    """Callback logging <B_p> mean/std. Fired by the optimizer every 8 steps (and
+    optionally at the end); no internal step guard so an explicit final call runs."""
+    def plaquette_callback(vstate: nk.vqs.VariationalState, step: int, time: float, config: Dict[str, Any]) -> None:
+        Bp_mean, Bp_std = calculate_plaquette_stabilizer(vstate, geometry)
+
+        with open(config['filename'], 'r') as f:
+            data = json.load(f)
+
+        data["order_params"]["Bp_mean"].append(Bp_mean)
+        data["order_params"]["Bp_std"].append(Bp_std)
+
+        with open(config['filename'], 'w') as f:
+            json.dump(data, f)
+
+    return plaquette_callback
+
+
 def create_wilson_loop_callback(geometry) -> Callable:
     """
     Create a callback to calculate Wilson loops during optimization.
@@ -650,10 +693,13 @@ def create_conditional_callbacks(geometry) -> List[Callable]:
         List of callback functions
     """
     callbacks = []
-    
+
     # Always add magnetization callback
     callbacks.append(create_magnetization_callback(geometry))
-    
+
+    # Plaquette-stabilizer <B_p> diagnostic (must stay ~1 on the sign-free cut)
+    callbacks.append(create_plaquette_stabilizer_callback(geometry))
+
     # if geometry.Lx > 6:
     #     callbacks.append(create_wilson_loop_callback(geometry))
     #     callbacks.append(create_renyi_callback(geometry))
