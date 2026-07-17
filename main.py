@@ -153,8 +153,8 @@ def main():
     # Calculate observables
     print("Calculating final observables...")
     
-    # For Lx > 6, calculate all observables at the end
-    if geometry.Lx > 6:
+    # For Lx >= 6, calculate all observables at the end
+    if geometry.Lx >= 6:
         # Calculate Wilson loops
         callback = create_wilson_loop_callback(geometry)
         callback(vs, -1, -1, config)

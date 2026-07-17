@@ -37,7 +37,16 @@ def calculate_wilson_loops(
     """
     center = (geometry.Lx - 1) / 2
     shift = geometry.Lx / 2 - radius - 2
-    
+
+    # Grid of loop-center placements to translation-average over. When the system
+    # is too small to slide the loop (shift <= 0, e.g. L=6 at radius 1), the arange
+    # is empty; fall back to a single central placement so the loop is still measured
+    # (mirrors the shift == 0 branch in calculate_renyi_entropy) instead of averaging
+    # over zero loops and returning nan.
+    placements = np.arange(center - shift, center + shift, 1.0)
+    if placements.size == 0:
+        placements = np.array([center])
+
     # Data for X loop calculations (integer radius)
     avWilsonX = []
     Xclosedlength = []
@@ -51,8 +60,8 @@ def calculate_wilson_loops(
     Z_BFFM = []
     
     # Calculate X Wilson loops with integer radius
-    for x in np.arange(center - shift, center + shift, 1.0):
-        for y in tqdm(np.arange(center - shift, center + shift, 1.0), desc="X Wilson loops"):
+    for x in placements:
+        for y in tqdm(placements, desc="X Wilson loops"):
             # Calculate Wilson X operators
             closedstringX, openstringX, ClosedWilsonX, OpenWilsonX = wilson_loop_obs_x(
                 vstate.hilbert, geometry, [x, y], radius
@@ -70,8 +79,8 @@ def calculate_wilson_loops(
     
     # Calculate Z Wilson loops with non-integer radius (radius + 0.5)
     z_radius = radius + 0.5
-    for x in np.arange(center - shift, center + shift, 1.0):
-        for y in tqdm(np.arange(center - shift, center + shift, 1.0), desc="Z Wilson loops"):
+    for x in placements:
+        for y in tqdm(placements, desc="Z Wilson loops"):
             try:
                 # Calculate Wilson Z operators
                 closedstringZ, openstringZ, ClosedWilsonZ, OpenWilsonZ = wilson_loop_obs_z(
@@ -287,7 +296,7 @@ def calculate_renyi_entropy(
     renyi_mean = []
     
     if shift != 0:
-        arange = np.arange(center - shift, center + shift, 1.0)
+        arange = placements
         with tqdm(total=len(arange) * len(arange), desc='ProgressBar') as pbar:
             for x in arange:
                 for y in arange:
