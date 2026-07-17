@@ -85,6 +85,42 @@ purged periodically, so if you clone there, re-clone rather than rely on it.
 git add results/ && git commit -m "L=4 hz-sweep results (ED + NQS)" && git push
 ```
 
+## Claude-driven cluster control (`scripts/cluster.sh`)
+
+Claude can drive the cluster over SSH so you only handle analysis. Access uses
+NERSC **sshproxy** (a 24h SSH certificate), and the 24h expiry doubles as a daily
+"authorize the day" gate.
+
+**One-time setup (local laptop):**
+```bash
+cp scripts/cluster/config.local.sh.example scripts/cluster/config.local.sh
+# edit config.local.sh: set NERSC_USER (gitignored — never committed)
+```
+sshproxy is NERSC's compiled client (v2.x), installed from the macOS `.pkg` at
+https://portal.nersc.gov/cfs/mfa/ → lands in `/usr/local/bin/sshproxy` (on PATH).
+(NOT the old `sshproxy.sh` bash script.)
+
+**Each day (you, once — needs password + MFA OTP):**
+```bash
+sshproxy -u <NERSC_USER>             # mints ~/.ssh/nersc (+ nersc-cert.pub), valid 24h
+```
+After that, Claude uses the cert for the day. When it expires, `cluster.sh` fails
+with a clear "run sshproxy" message.
+
+**Subcommands** (`bash scripts/cluster.sh <cmd>`):
+| command            | what it does                                             | prompts? |
+|--------------------|----------------------------------------------------------|----------|
+| `status`           | `squeue` for your jobs                                   | no (allowlisted) |
+| `sync`             | `git pull --ff-only` on the cluster (latest code)        | no |
+| `logs [pattern]`   | tail newest `logs/*<pattern>*.out`                       | no |
+| `fetch`            | commit+push `results/` on cluster, then pull locally     | no |
+| `submit <jobfile>` | `sbatch` a job                                           | **yes — always** |
+| `cancel <jobid>`   | `scancel` a job                                          | **yes — always** |
+
+`submit`/`cancel` are intentionally **not** allowlisted, so every compute run and
+kill requires your explicit approval in Claude Code. Before `submit`, Claude also
+consults you in chat (experiment / resources / walltime / why) — see CLAUDE.md.
+
 ## Compare NQS vs ED
 ```bash
 python scripts/compare.py \

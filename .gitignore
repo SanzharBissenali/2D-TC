@@ -8,6 +8,9 @@ venv/
 # OS
 .DS_Store
 
+# Cluster connection settings (NERSC username etc.) — never commit
+scripts/cluster/config.local.sh
+
 # Stray simulation outputs in the repo root (committed copies live under results/)
 /G-equiv_*.json
 /G-equiv_*.mpack

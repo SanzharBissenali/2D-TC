@@ -56,6 +56,28 @@ Validate the architecture at **L=4, OBC** against ED.
   with observables (~4 min energies-only).
 - Next: `scripts/plot_sweep.py` (energy error + magnetization vs hz) once the sweep lands.
 
+## Cluster automation & safeguard (IMPORTANT)
+Cluster access is **already configured** — Claude drives NERSC directly via
+`scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the
+gitignored `scripts/cluster/config.local.sh`, user `sanzharb`; see docs/NERSC.md).
+At session start, just run `bash scripts/cluster.sh status` to connect. If it
+fails with a "no NERSC key / cert expired" message, the daily cert lapsed — ask
+the user to run `sshproxy -u sanzharb` (only they can; it needs their password +
+MFA), then retry. Monitoring/fetching is frictionless; **launching compute is gated**.
+
+**Before ever running `submit` (or any new cluster compute), consult the user and
+get explicit approval.** Present a short job spec first:
+- **Experiment** — what physics/sweep this run does and why now.
+- **Resources** — the `#SBATCH` request (queue, `-N/-G/-c`, node fraction).
+- **Walltime** — `-t` and the expected runtime, with headroom rationale.
+- **Why** — what question the result answers / what it unblocks.
+
+`submit` and `cancel` are deliberately **not** in the permission allowlist, so they
+always prompt too — the consult (chat) and the prompt (Claude Code) are both
+required. Read-only ops (`status`/`sync`/`logs`/`fetch`) are allowlisted; `fetch`
+brings results back (commit+push on cluster, pull locally) and is safe to run
+freely. Never allowlist `submit`/`cancel`.
+
 ## Commands
 ```bash
 # ED benchmark (one hz point)
@@ -73,7 +95,9 @@ python scripts/compare.py --nqs results/nqs/G-equiv_1_L4_hx0.00_hz0.10.json --ed
 tail -f logs/nqs_<jobid>.out
 ```
 
-Cluster runs: `sbatch jobs/nersc_ed.sh` and `sbatch jobs/nersc_nqs.sh` (see docs/NERSC.md).
+Cluster runs (Claude-driven, gated): `bash scripts/cluster.sh submit jobs/nersc_ed.sh`
+or `... jobs/nersc_nqs.sh`. Monitor with `... status` / `... logs <pat>`, retrieve
+with `... fetch`. See docs/NERSC.md.
 
 ## Environment
 - Pinned in `requirements.txt`: `netket==3.16.1.post1`, `jax==0.5.2`, `flax==0.10.4`.
@@ -88,11 +112,12 @@ Cluster runs: `sbatch jobs/nersc_ed.sh` and `sbatch jobs/nersc_nqs.sh` (see docs
   (L=2 must use the default sampler, not `--use_custom_sampler`.)
 
 ## Workflow (NERSC)
-Develop locally → commit/push to GitHub → pull on NERSC → `sbatch` jobs → commit
-results (`results/`) on NERSC → push → pull locally to analyze. **Full setup and
-run instructions: [`docs/NERSC.md`](docs/NERSC.md)** (allocation `m5340_g`, conda
-env `2dtc`, git-over-SSH, job submission). Env `2dtc` is created and working on the
-cluster as of 2026-07-16.
+Develop locally → commit/push to GitHub → Claude drives the cluster over
+`scripts/cluster.sh`: `sync` (pull code on NERSC) → `submit` a job (gated —
+consult first) → `status`/`logs` to monitor → `fetch` (commit+push `results/` on
+NERSC, then pull locally) → analyze. Git stays the source of truth. **Full setup
+and run instructions: [`docs/NERSC.md`](docs/NERSC.md)** (allocation `m5340_g`,
+conda env `2dtc`, sshproxy, job submission). Env `2dtc` working as of 2026-07-16.
 
 Key NERSC gotchas learned:
 - Use `-q shared` (partition `shared_gp`) for these 1-GPU / CPU-bound jobs — charged

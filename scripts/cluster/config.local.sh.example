@@ -1,0 +1,10 @@
+# Cluster connection settings for scripts/cluster.sh.
+# Copy to config.local.sh (gitignored) and fill in your NERSC username.
+#
+#   cp scripts/cluster/config.local.sh.example scripts/cluster/config.local.sh
+#   $EDITOR scripts/cluster/config.local.sh   # set NERSC_USER
+
+NERSC_USER=""                          # <-- your NERSC login name (required)
+NERSC_HOST="perlmutter.nersc.gov"      # login host
+NERSC_REPO="2D-TC"                     # repo path on the cluster, relative to $HOME
+NERSC_KEY="$HOME/.ssh/nersc"           # sshproxy-minted key (default output path)
