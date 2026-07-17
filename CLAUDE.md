@@ -67,18 +67,35 @@ qubits, L=12→264, so no ED ground truth — use finite-size scaling of order p
   closes (~1/L) so those points converge slower at large L — watch the stragglers.
 - Observables: BFFM/Wilson (fixed radius 1), magnetization+susceptibility `χ=d⟨σ⟩/dhz`,
   Rényi-2, energy susceptibility `d²E/dhz²`. Wilson/Rényi now run at **L≥6** (was L>6).
-- **Measured timings (A100, 200-step projection):** s/step ≈ 0.58/2.0/6.7/20.4/57 for
-  L=4/6/8/10/12 (≈`N^2.7`). Per point: L6 ~7 min, L8 ~22 min, L10 ~68 min, L12 ~3.2 h.
-- Jobs: `jobs/nersc_sweep.sh` — one array script, chunking driven by `--array` size:
-  L6 `--array=0-1` (8/7 pts, `-t 1:30`), L8 `--array=0-2` (5/5/5, `-t 3:00`),
-  L10/L12 `--array=0-14` (1 pt/task, `-t 2:00` / `-t 5:00`). ~72 GPU-h total.
-- Analysis TODO: `scripts/analyze_sweep.py` (order params + susceptibilities vs hz
-  across L; extract `h_c` from crossings / χ-peaks) once data lands.
-- Gotcha: `main.py` writes the run `.json` **every step**, so a walltime kill leaves a
-  partial-but-existing file. Sweep jobs skip only if **complete** (`scripts/is_complete.py`:
-  `.mpack` present ⇒ training done; L≥6 Wilson+Rényi order-params non-empty ⇒ observables
-  done) — never bare file-existence, or half-finished points get skipped forever.
-- Open before submit: confirm the `shared_gp` QOS max walltime allows `-t 5:00` (L=12).
+- **Measured timings (A100):** s/step ≈ 0.58/2.0/6.7/20.4/57 for L=4/6/8/10/12 (≈`N^2.7`).
+  Per point @200 steps: L6 ~7 min, L8 ~22 min, L10 ~68 min, L12 ~3.2 h; all fit walltime.
+- Jobs: `jobs/nersc_sweep.sh` — one array script, `--array` size sets chunking:
+  L6 `-t1:30 --array=0-1`, L8 `-t3:00 --array=0-2`, L10 `-t2:00`/L12 `-t5:00` (`--array=0-14`).
+  `shared_gp` allows `-t5:00`. Skip-if-**complete** via `scripts/is_complete.py` (`.mpack`
+  ⇒ training done; L≥6 Wilson+Rényi order-params non-empty ⇒ observables done) — never bare
+  file-existence, since `main.py` writes the `.json` every step (partial file would look done).
+- **Status (2026-07-17): sweep COMPLETE**, all 4×15 points in `results/nqs/`. Vscore ~1e-6
+  deep in the phase, rising to ~1e-3 near hz=0.5 (criticality). **2 points DIVERGED**
+  (L8/hz0.425, L10/hz0.35): NaN at step ~4 but they still wrote `.mpack`+observables, so
+  `is_complete` marks them "done" (skipped on resubmit) — excluded in analysis.
+- Analysis in `analysis/` (json+numpy+matplotlib, **no netket**; figures→`figures/`, gitignored;
+  validate cells headless before committing): `01_L4_vs_ED` (rel-err validates the paper's
+  1e-6–1e-7); `02_sweep_observables` (learning curves; ⟨σᶻ⟩/⟨W_X⟩; S2 & BFFM ρ_Z + their
+  derivatives, 2×2); `03_fss` (tanh & Richards h_c(L) fits → inverse-power extrapolation).
+  Helpers: `scripts/convergence.py` (plateau step), `scripts/sweep_summary.py` (per-L report).
+- **FSS first pass:** h_c(L) from sigmoid inflections drift 0.44→0.40 with L; fixed
+  x=1/ν≈1.59 (3D-Ising) ⇒ h_c(∞)≈0.375–0.384 (spread over BFFM/Rényi × tanh/Richards).
+  Theory is `h_c=0.328473(2)`; the ~0.05 gap is finite-size/estimator bias, **not** fit
+  freedom. **Free x is degenerate with 4 sizes** (corr(b,x)≈1, x error >100%); honest fixes:
+  crossings of dimensionless ratios (vs inflections), a subleading `L^{-x'}` term, or more L.
+- **Physics gotcha (hz sweep):** the responsive Wilson loop is `⟨W_X⟩ = ∏σˣ` (product of
+  vertex/star ops, disordered by hz, drops 1→0); `⟨W_Z⟩ = ∏σᶻ = ∏plaquettes ≡ 1` (commutes
+  with hz — flat, no signal). The **BFFM string order parameter uses the σᶻ open/closed loop**
+  (`WilsonBFFM[6]`), rising 0→~0.7 across the transition. (`WilsonBFFM` = [X_mean, X_std,
+  X_BFFM, X_BFFM_std, Z_mean, Z_std, Z_BFFM, Z_BFFM_std].)
+- Tooling gotcha: `cluster.sh fetch` now commits→**rebase→push** (was `add && commit && push`,
+  which stranded results when `commit` found nothing new, or when origin had diverged from
+  code pushed off-cluster).
 
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
