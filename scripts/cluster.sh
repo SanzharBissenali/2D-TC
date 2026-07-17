@@ -85,8 +85,12 @@ case "$cmd" in
         remote "ls -t logs/*${pat}*.out 2>/dev/null | head -1 | xargs -r tail -n 60"
         ;;
     fetch)
-        remote 'git add results/ && git commit -q -m "cluster: sweep results" && git push' \
-            || echo "(cluster: nothing new to commit)"
+        # Commit any new results, then ALWAYS push — covers the case where a prior
+        # fetch committed but the push was skipped (git commit exits non-zero when
+        # there is nothing new, which short-circuits an && chain), leaving the
+        # cluster ahead-by-N and results stranded.
+        remote 'git add -A results/ && { git commit -q -m "cluster: sweep results" || true; } && git pull --rebase --no-edit && git push' \
+            || echo "(cluster: push failed or nothing to push)"
         echo "--- pulling results locally ---"
         git -C "$REPO_ROOT" pull --ff-only
         ;;
