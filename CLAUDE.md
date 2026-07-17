@@ -56,6 +56,30 @@ Validate the architecture at **L=4, OBC** against ED.
   with observables (~4 min energies-only).
 - Next: `scripts/plot_sweep.py` (energy error + magnetization vs hz) once the sweep lands.
 
+## Current work — phase-transition sweep (L=6,8,10,12)
+Detect the topological→trivial transition beyond ED (L≥6 is **NQS-only**: L=6→60
+qubits, L=12→264, so no ED ground truth — use finite-size scaling of order params).
+- Sweep: `hz ∈ [0.15, 0.50]` step `0.025` = **15 points**, `hx=0` (float64), per L.
+  Brackets the expected `h_c ≈ 0.3–0.34` (3D-Ising* single-field transition).
+- Ansatz: **same Combo-small as L=4** (fixed, for a clean scaling baseline).
+- Steps: **200** (`sim_time=2.0`). L=4 converges to 0.03% energy by ~step 110
+  (`scripts/convergence.py`); 350 was ~3× overkill. Caveat: near `h_c` the gap
+  closes (~1/L) so those points converge slower at large L — watch the stragglers.
+- Observables: BFFM/Wilson (fixed radius 1), magnetization+susceptibility `χ=d⟨σ⟩/dhz`,
+  Rényi-2, energy susceptibility `d²E/dhz²`. Wilson/Rényi now run at **L≥6** (was L>6).
+- **Measured timings (A100, 200-step projection):** s/step ≈ 0.58/2.0/6.7/20.4/57 for
+  L=4/6/8/10/12 (≈`N^2.7`). Per point: L6 ~7 min, L8 ~22 min, L10 ~68 min, L12 ~3.2 h.
+- Jobs: `jobs/nersc_sweep.sh` — one array script, chunking driven by `--array` size:
+  L6 `--array=0-1` (8/7 pts, `-t 1:30`), L8 `--array=0-2` (5/5/5, `-t 3:00`),
+  L10/L12 `--array=0-14` (1 pt/task, `-t 2:00` / `-t 5:00`). ~72 GPU-h total.
+- Analysis TODO: `scripts/analyze_sweep.py` (order params + susceptibilities vs hz
+  across L; extract `h_c` from crossings / χ-peaks) once data lands.
+- Gotcha: `main.py` writes the run `.json` **every step**, so a walltime kill leaves a
+  partial-but-existing file. Sweep jobs skip only if **complete** (`scripts/is_complete.py`:
+  `.mpack` present ⇒ training done; L≥6 Wilson+Rényi order-params non-empty ⇒ observables
+  done) — never bare file-existence, or half-finished points get skipped forever.
+- Open before submit: confirm the `shared_gp` QOS max walltime allows `-t 5:00` (L=12).
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

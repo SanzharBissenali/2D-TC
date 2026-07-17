@@ -45,11 +45,17 @@ check_key() {
 # Run a command inside the cluster repo checkout.
 remote() { check_key; "${SSH[@]}" "cd '$NERSC_REPO' && $*"; }
 
-# preflight <jobfile>: show the user exactly what they are approving BEFORE sbatch.
-# TODO(you): implement. See the note printed by Claude for the design question.
+# preflight <jobfile> [sbatch args...]: show exactly what is being submitted BEFORE
+# sbatch, so the approval prompt is informed (the #SBATCH lines baked into the script
+# plus the per-submit overrides like -t / --array / --export).
 preflight() {
-    local job="$1"
-    echo "TODO: preflight display not implemented — see scripts/cluster.sh preflight()"
+    local job="$1"; shift
+    echo "──────── job spec ────────"
+    echo "  script          : $job"
+    echo "  sbatch overrides: ${*:-(none; using script #SBATCH defaults)}"
+    echo "  #SBATCH in script:"
+    grep -E '^#SBATCH' "$job" | sed 's/^/    /'
+    echo "──────────────────────────"
 }
 
 usage() {
@@ -85,9 +91,10 @@ case "$cmd" in
         git -C "$REPO_ROOT" pull --ff-only
         ;;
     submit)
-        shift; job="${1:?usage: bash scripts/cluster.sh submit jobs/nersc_nqs.sh}"
-        preflight "$job"
-        remote "mkdir -p logs && sbatch '$job'"
+        shift; job="${1:?usage: bash scripts/cluster.sh submit <jobfile> [sbatch args...]}"
+        shift; sbatch_args=("$@")
+        preflight "$job" "${sbatch_args[@]}"
+        remote "mkdir -p logs && sbatch ${sbatch_args[*]} '$job'"
         ;;
     cancel)
         shift; jid="${1:?usage: bash scripts/cluster.sh cancel <jobid>}"
