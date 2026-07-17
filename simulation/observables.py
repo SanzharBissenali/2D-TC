@@ -296,7 +296,7 @@ def calculate_renyi_entropy(
     renyi_mean = []
     
     if shift != 0:
-        arange = placements
+        arange = np.arange(center - shift, center + shift, 1.0)
         with tqdm(total=len(arange) * len(arange), desc='ProgressBar') as pbar:
             for x in arange:
                 for y in arange:
