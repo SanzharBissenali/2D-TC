@@ -17,3 +17,6 @@ scripts/cluster/config.local.sh
 /experiment_log.json
 logs/
 *.out
+
+# Notebook-generated figures (regenerable from analysis/*.ipynb + results/)
+figures/
