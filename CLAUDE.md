@@ -150,6 +150,32 @@ nonlinearity + sampler/optimizer/seed byte-identical. Kept on its own branch for
   in `TransformerSymmetric` (currently one `dtype`), a complex-safe norm (LayerNorm on complex is the
   gotcha — prefer the arXiv:2503.10462 fixed-scale norm), and SR with `mode='complex'` / non-holo QGT.
 
+## Current work — hy-field first-order transition sweep (CNN, L=4/6/8)
+Pure-Y-field cut (`hx=hz=0`), `hy ∈ {0.80..1.20}` step 0.05 (9 pts), **CNN only** (the
+transformer's complex path is still future work — see above). Goal: observe the 1st-order
+transition (theory `h_c=1.0` in the thermodynamic limit; shifts at finite L). Tooling (new,
+this session): `jobs/nersc_hy_sweep.sh` (arm-dispatch + array-chunk, `ARMS` default `cnn`),
+`jobs/nersc_hy_ed.sh` (L=4 ED companion), `scripts/hy_summary.py` (per-(L,arm) E/⟨σʸ⟩/⟨B_p⟩
+table, locates the ⟨σʸ⟩ jump, skips no-`.mpack` partials), plus `⟨σʸ⟩` added to `exact/lanczos_ed.py`.
+- **RESULT (2026-07-18): 1st-order transition OBSERVED.** L6 (converged pts): ⟨σʸ⟩ **jumps
+  0.24→0.89** and ⟨B_p⟩ **collapses 0.82→0.28** across hy=1.00→1.10 ⇒ `h_c(L6)≈1.05`. Energy
+  shows the matching slope kink (ΔE per step ~0.5 → ~5 near the jump). Transition sits **slightly
+  ABOVE 1.0**, not below — consistent with metastability/hysteresis (identity-init starts in the
+  topological phase, so the ordered phase persists to higher hy). Window [0.80,1.20] brackets it.
+- **Gotcha — complex JIT dominates runtime.** `hy≠0 ⇒ dtype=complex` (`config.py`), non-holomorphic
+  QGT. XLA constant-folding compile is huge and scales with L: **~18 min @L4, ~80 min @L6/L8**, and
+  it is paid PER hy POINT because each point is a fresh `python main.py` process. Steady stepping is
+  cheap (L4 ~1.16 s/step) so JIT is ~80% of a point's wall time. ⇒ at the 1:30 walltime L4 does ~4
+  pts/dispatch, L6 ~2, L8 ~1. **Fix (TODO, deferred): loop the hy list INSIDE one process** to
+  amortize JIT (turns ~25–30 GPU-h of recompute into ~3–4). Resubmit-to-continue works meanwhile
+  (skip-if-complete). Use `-t 3:00`/`-t 5:00` for continuations, 1-pt-per-task arrays for L8.
+- **Gotcha — complex L=4 ED OOMs on the shared node.** At 2^24 the complex sparse H alone (dense
+  off-diagonal X/Y terms, complex128, netket Pauli→sparse intermediates) exceeds ~55 GB and OOM-kills
+  (exit 137) **even with `--no-observables`**. Needs `-q regular` (~256 GB exclusive node). ED is
+  confirmatory only — the transition is clear from NQS ⟨σʸ⟩/⟨B_p⟩ alone, and the complex CNN energies
+  are internally consistent (monotonic in hy, ⟨B_p⟩≈0.93 in the ordered phase), so the `ComplexWarning`
+  (discarded-imag in the Wilson-nonlinearity VJP, `networks.py:261`) is very likely benign.
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the
