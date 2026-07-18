@@ -42,6 +42,9 @@ declare -A ARM_FLAGS
 ARM_FLAGS[cnn]="--symmetric_block cnn"
 ARM_FLAGS[tf]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
 ARM_FLAGS[tfg]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 6 --tf_heads 2 --tf_ffn_mult 4 --tf_activation gelu"
+# Convergence-tweak arms (used only if the primary tf fails to hit ED at L=4):
+ARM_FLAGS[tfbig]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"   # 2x residual stream (d=16)
+ARM_FLAGS[tfwide]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 4 --tf_activation relu"   # 2x FFN hidden (4d)
 
 echo "=== driver: LX=$LX SIM_TIME=$SIM_TIME ARMS=[$ARMS] HZ=[$HZ_LIST] SEED=$SEED ==="
 for hz in $HZ_LIST; do
