@@ -89,7 +89,7 @@ case "$cmd" in
         # fetch committed but the push was skipped (git commit exits non-zero when
         # there is nothing new, which short-circuits an && chain), leaving the
         # cluster ahead-by-N and results stranded.
-        remote 'git add -A results/ && { git commit -q -m "cluster: sweep results" || true; } && git pull --rebase --no-edit && git push' \
+        remote 'git add -A results/ && { git commit -q -m "cluster: sweep results" || true; } && git pull --rebase --autostash --no-edit && git push' \
             || echo "(cluster: push failed or nothing to push)"
         echo "--- pulling results locally ---"
         git -C "$REPO_ROOT" pull --ff-only
