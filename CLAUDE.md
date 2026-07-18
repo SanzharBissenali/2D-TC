@@ -156,12 +156,23 @@ transformer's complex path is still future work — see above). Goal: observe th
 transition (theory `h_c=1.0` in the thermodynamic limit; shifts at finite L). Tooling (new,
 this session): `jobs/nersc_hy_sweep.sh` (arm-dispatch + array-chunk, `ARMS` default `cnn`),
 `jobs/nersc_hy_ed.sh` (L=4 ED companion), `scripts/hy_summary.py` (per-(L,arm) E/⟨σʸ⟩/⟨B_p⟩
-table, locates the ⟨σʸ⟩ jump, skips no-`.mpack` partials), plus `⟨σʸ⟩` added to `exact/lanczos_ed.py`.
-- **RESULT (2026-07-18): 1st-order transition OBSERVED.** L6 (converged pts): ⟨σʸ⟩ **jumps
-  0.24→0.89** and ⟨B_p⟩ **collapses 0.82→0.28** across hy=1.00→1.10 ⇒ `h_c(L6)≈1.05`. Energy
-  shows the matching slope kink (ΔE per step ~0.5 → ~5 near the jump). Transition sits **slightly
-  ABOVE 1.0**, not below — consistent with metastability/hysteresis (identity-init starts in the
-  topological phase, so the ordered phase persists to higher hy). Window [0.80,1.20] brackets it.
+table, locates the ⟨σʸ⟩ jump, skips no-`.mpack` partials), `analysis/04_hy_transition.ipynb`
+(⟨σʸ⟩/⟨B_p⟩ vs hy per L + d⟨σʸ⟩/dhy; **convergence-based** loader — keeps runs whose energy has
+plateaued (last-20 rel-std < 5e-3), so walltime-killed-but-converged partials count and NaN/early
+runs don't), plus `⟨σʸ⟩` added to `exact/lanczos_ed.py`.
+- **RESULT (2026-07-18): 1st-order transition OBSERVED; sweep DONE for L4 (9/9) & L6 (9/9).**
+  L6 is the cleanest: ⟨σʸ⟩ **jumps 0.24→0.69→0.89** and ⟨B_p⟩ **collapses 0.82→0.46→0.28** across
+  hy=1.00/1.05/1.10 ⇒ `h_c(L6)≈1.02–1.03` (steepest step 1.00→1.05); matching energy slope-kink.
+  **L4 is a broad, rounded crossover** (⟨σʸ⟩ 0.15→0.87 over 0.80→1.20, no sharp jump — finite-size
+  rounding). Finite-size trend: **L4 rounded → L6 sharp**, marching toward a true discontinuity.
+  Transition sits **slightly ABOVE 1.0**, not below — consistent with metastability/hysteresis
+  (identity-init starts topological, so the ordered phase persists to higher hy). Window brackets it.
+- **L8 = topological side only (5/9).** hy=0.80–1.00 converged (⟨σʸ⟩ 0.14→0.30, ⟨B_p⟩ 0.93→0.75,
+  energy plateaued <0.1% — usable via the convergence filter even without `.mpack`). **hy=1.05–1.20
+  DIVERGED to NaN at step ~4** (SR instability at large L *past* the transition, where the disordered
+  GS is far from the topological init; `diag_shift=6e-5` too small there). Those NaN runs still wrote
+  `.mpack` ⇒ `is_complete` falsely skips them (delete the 4 `.mpack`+`.json` to force rerun). **TODO
+  to finish L8's high-hy side:** raise `diag_shift` (→~1e-3), maybe halve `dt`, resubmit at `-t 5:00`.
 - **Gotcha — complex JIT dominates runtime.** `hy≠0 ⇒ dtype=complex` (`config.py`), non-holomorphic
   QGT. XLA constant-folding compile is huge and scales with L: **~18 min @L4, ~80 min @L6/L8**, and
   it is paid PER hy POINT because each point is a fresh `python main.py` process. Steady stepping is
