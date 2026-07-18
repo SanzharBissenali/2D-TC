@@ -135,10 +135,20 @@ nonlinearity + sampler/optimizer/seed byte-identical. Kept on its own branch for
   vs closed form. netket/jax NOT installed locally ⇒ end-to-end forward pass runs on NERSC.
 - **Validated on GPU (2026-07-17):** transformer trains end-to-end at L=4 (interactive salloc):
   1684 total params (Block1 448 + TF Block3 1236), energy descends cleanly, **~1.3 s/step**
-  steady-state (vs CNN ~0.58 @L4; first step ~29 s = JIT). Then submitted **batch job 56048230**
-  (`jobs/nersc_transformer.sh`, `-q shared -t4:00`): L=4 rel-err at hz∈{0.10,0.15,0.20,0.25,0.30}
-  × {cnn,tf,tfg} + L=6 hz=0.15 × {cnn,tf,tfg}, 18 runs, skip-if-complete. Analyze with
-  `scripts/erel_table.py` after `cluster.sh fetch` (kill criterion: L=4 rel-err ≤1e-5).
+  steady-state (vs CNN ~0.58 @L4; first step ~29 s = JIT). `jobs/nersc_transformer.sh` is now
+  **env-parameterized** (`--export=ALL,ARMS=…,LX=…,HZ_LIST=…,SIM_TIME=…`) so one script covers the
+  per-arm / per-L jobs; keep them **short** — a 4 h job stalled in PENDING, 1 h jobs backfill fast.
+  Live run: L=4 rel-err at hz∈{0.10,0.15,0.20,0.25,0.30} as **three 1 h per-arm jobs** (cnn/tf/tfg)
+  + **one 1 h L=6 hz=0.15 all-arms job**. Analyze with `scripts/erel_table.py` after
+  `cluster.sh fetch` (kill criterion: L=4 rel-err ≤1e-5). Shrink a PENDING job's walltime in place
+  via `scontrol update JobId=<id> TimeLimit=…` (raw ssh; no re-queue, keeps job id).
+- **y-field (hy≠0) = future work; validated scope is the sign-free hz cut (all-real).** `config.py`
+  auto-switches `dtype='complex'`; as written that makes the WHOLE transformer complex (like the CNN
+  arm), and since Block 1 + Wilson upstream also go complex the transformer input is already complex.
+  The `--tf_complex_output` flag is built for the Viteritti real-deep + complex-shallow readout
+  (`out = LN(Dense_re z) + 1j·LN(Dense_im z)`), but using it needs: decouple encoder-vs-readout dtype
+  in `TransformerSymmetric` (currently one `dtype`), a complex-safe norm (LayerNorm on complex is the
+  gotcha — prefer the arXiv:2503.10462 fixed-scale norm), and SR with `mode='complex'` / non-holo QGT.
 
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
