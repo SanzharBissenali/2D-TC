@@ -3,14 +3,75 @@ Module for time-dependent variational principle (TDVP) optimization.
 """
 
 import time
+import json
 import jax
 import jax.numpy as jnp
+import numpy as np
 import netket as nk
 from functools import partial
 from tqdm import tqdm
 from typing import Dict, Any, Callable, Optional, List, Tuple
 
 from utils.config import update_data
+
+
+# --- instability instrumentation (arm-agnostic; used by both CNN and transformer arms) ---
+_WRAP = ("Sequential", "FullTransformer", "TransformerSymmetric")
+
+
+def _key_str(k):
+    for attr in ("key", "name", "idx"):
+        if hasattr(k, attr):
+            return str(getattr(k, attr))
+    return str(k)
+
+
+def _block_of(path):
+    """First non-wrapper, non-'params' path component => the block name."""
+    names = [_key_str(k) for k in path]
+    for nm in names:
+        if nm == "params" or any(nm.startswith(w) for w in _WRAP):
+            continue
+        return nm
+    return names[0] if names else "root"
+
+
+def _tree_norm(tree):
+    leaves = jax.tree_util.tree_leaves(tree)
+    if not leaves:
+        return 0.0
+    return float(jnp.sqrt(sum(jnp.sum(jnp.abs(x) ** 2) for x in leaves)))
+
+
+def _block_norms(tree):
+    acc = {}
+    for path, leaf in jax.tree_util.tree_leaves_with_path(tree):
+        b = _block_of(path)
+        acc[b] = acc.get(b, 0.0) + float(jnp.sum(jnp.abs(leaf) ** 2))
+    return {k: round(float(np.sqrt(v)), 6) for k, v in acc.items()}
+
+
+def _gammas(params):
+    """softplus(gamma_raw) per block -- attention range diagnostic (full_transformer only)."""
+    out = {}
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        if _key_str(path[-1]) == "gamma_raw":
+            a = np.asarray(leaf)
+            sp = np.maximum(a, 0.0) + np.log1p(np.exp(-np.abs(a)))   # stable softplus
+            out[_block_of(path)] = [round(float(v), 5) for v in np.ravel(sp)]
+    return out
+
+
+def _qgt_cond(S):
+    """Conditioning of the (regularized) QGT: max/min singular value, cond, retained rank."""
+    try:
+        sv = np.linalg.svd(np.asarray(S.to_dense()), compute_uv=False)
+        smax = float(sv[0]); smin = float(sv[-1])
+        return {"sv_max": round(smax, 8), "sv_min": round(smin, 12),
+                "cond": round(smax / max(smin, 1e-300), 2),
+                "rank": int(np.sum(sv > 1e-12 * smax)), "P": int(sv.size)}
+    except Exception as e:  # never let a diagnostic kill training
+        return {"error": str(e)[:100]}
 
 def run_tdvp(
     hamiltonian: nk.operator.AbstractOperator,
@@ -40,7 +101,14 @@ def run_tdvp(
     diag_scale = 0.0
     rtol = 1e-30
     rtol_smooth = 1e-30
-    
+    K_diag = 8    # cadence for the cheap per-block grad-norm / gamma diagnostics
+    K_qgt = 40    # coarser cadence for the O(P^3) host-side QGT-conditioning SVD (avoids inflating L>=6 wall-clock)
+
+    # v3: real params + complex output = non-holomorphic => explicit mode='complex'.
+    # Default (sign-free real, or the existing complex-CNN hy path) leaves mode unset (auto).
+    qgt_mode = 'complex' if (config.get('tf_complex_output', False)
+                             and config.get('dtype') == 'float64') else None
+
     loop = tqdm(range(n_iter))
     t = t_start
     
@@ -61,12 +129,14 @@ def run_tdvp(
         E, f = vstate.expect_and_grad(hamiltonian)
         f = jax.block_until_ready(f)
         t_grad = time.time() - t0
+        grad_norm = _tree_norm(f)
 
         # Compute quantum geometric tensor (QGT) and the SR update direction
         t0 = time.time()
-        S = vstate.quantum_geometric_tensor(
-            nk.optimizer.qgt.QGTJacobianDense(diag_shift=diag_shift, diag_scale=diag_scale)
-        )
+        _qgt = (nk.optimizer.qgt.QGTJacobianDense(diag_shift=diag_shift, diag_scale=diag_scale, mode=qgt_mode)
+                if qgt_mode else
+                nk.optimizer.qgt.QGTJacobianDense(diag_shift=diag_shift, diag_scale=diag_scale))
+        S = vstate.quantum_geometric_tensor(_qgt)
         gamma_f = jax.tree.map(lambda x: -1.0 * x, f)
         dtheta, _ = S.solve(
             partial(nk.optimizer.solver.pinv_smooth, rtol=rtol, rtol_smooth=rtol_smooth),
@@ -74,6 +144,7 @@ def run_tdvp(
         )
         dtheta = jax.block_until_ready(dtheta)
         t_sr = time.time() - t0
+        dtheta_norm = _tree_norm(dtheta)
 
         # Update parameters
         vstate.parameters = jax.tree.map(lambda x, y: x + dt * y, vstate.parameters, dtheta)
@@ -82,19 +153,37 @@ def run_tdvp(
         update_data(filename, [
             "iters", "energy", "energy_eom", "energy_var", "tau_corr",
             "Rsplit", "Vscore", "MCMC_accepted", "MCMC_total",
-            "t_sample", "t_grad", "t_sr"
+            "t_sample", "t_grad", "t_sr", "grad_norm", "dtheta_norm"
         ], [
             t, E.mean, E.error_of_mean, E.variance, E.tau_corr,
             E.R_hat, config['N'] * E.variance / E.mean**2,
             vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps,
-            t_sample, t_grad, t_sr
+            t_sample, t_grad, t_sr, grad_norm, dtheta_norm
         ])
-        
+
         # Check for NaN values
         if jnp.isnan(E.mean):
             print("Encountered NaN energy, stopping optimization.")
             break
-        
+
+        # Heavier diagnostics (per-block grad norms, QGT conditioning, attention gamma) every K_diag.
+        if step % K_diag == 0:
+            try:
+                _diag = {
+                    "step": step,
+                    "block_grad_norms": _block_norms(f),
+                    "gammas": _gammas(vstate.parameters),
+                }
+                if step % K_qgt == 0:                     # QGT SVD is O(P^3) on host -> coarse cadence
+                    _diag["qgt"] = _qgt_cond(S)
+                with open(filename, 'r') as _fh:
+                    _d = json.load(_fh)
+                _d["diagnostics"].append(_diag)
+                with open(filename, 'w') as _fh:
+                    json.dump(_d, _fh)
+            except Exception as _e:  # diagnostics must never interrupt training
+                print(f"[diag] skipped at step {step}: {_e}")
+
         # Call any callback functions
         if callbacks is not None and step % 8 == 0:
             for callback in callbacks:

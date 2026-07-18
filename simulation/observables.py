@@ -560,6 +560,62 @@ def create_plaquette_stabilizer_callback(geometry) -> Callable:
     return plaquette_callback
 
 
+def check_Av_invariance(model, params, geometry, n_configs: int = 8) -> float:
+    """Exact vertex/gauge (A_v) symmetry check: log psi(sigma) == log psi(A_v sigma).
+
+    At init the full_transformer (odd embedding + identity Block-1 + channelwise Wilson
+    fusion) is exactly A_v-invariant; a nonzero deviation means the symmetry-at-init is
+    broken (biased embedding, a live sublayer, or a wrong fusion). Uses BULK vertex stars
+    (4 edges each) from the geometry. Returns max |Delta log psi| over configs x vertices.
+    """
+    N = geometry.N
+    # ALL vertex stabilizers (bulk 4-edge + boundary 2-3-edge); guard against a vacuous pass
+    stars = list(geometry.vertex_bulk_hetero) + list(geometry.vertex_edge_hetero)
+    assert len(stars) > 0, "no vertex stars to test -- A_v gate would pass vacuously"
+    rng = np.random.default_rng(0)
+    X = rng.choice([-1.0, 1.0], size=(n_configs, N))
+    base = np.asarray(model.apply({'params': params}, X))
+    max_dev = 0.0
+    for star in stars:                                    # apply each A_v (flip its star spins)
+        Xf = X.copy()
+        Xf[:, np.asarray(star)] *= -1
+        flipped = np.asarray(model.apply({'params': params}, Xf))
+        max_dev = max(max_dev, float(np.max(np.abs(flipped - base))))
+    return max_dev
+
+
+def dump_attention(vstate, config) -> None:
+    """Dump Block-1 gamma (attention range) + alpha tables at convergence (interpretability).
+
+    Writes <filename_base>_attn.json with softplus(gamma) and the raw alpha tables per
+    (block, head). Only meaningful for the full_transformer arm.
+    """
+    import jax
+
+    def _key(k):
+        for a in ("key", "name", "idx"):
+            if hasattr(k, a):
+                return str(getattr(k, a))
+        return str(k)
+
+    gammas, alphas = {}, {}
+    for path, leaf in jax.tree_util.tree_leaves_with_path(vstate.parameters):
+        name = _key(path[-1])
+        blk = ".".join(_key(k) for k in path[:-1])
+        a = np.asarray(leaf)
+        if name == "gamma_raw":
+            gammas[blk] = (np.maximum(a, 0.0) + np.log1p(np.exp(-np.abs(a)))).tolist()
+        elif name == "alpha":
+            alphas[blk] = a.tolist()
+    out = {"gammas": gammas,
+           "alpha_shapes": {k: list(np.shape(v)) for k, v in alphas.items()},
+           "alpha": alphas}
+    with open(f"{config['filename_base']}_attn.json", 'w') as f:
+        json.dump(out, f)
+    print(f"Wrote attention dump: {config['filename_base']}_attn.json "
+          f"({len(gammas)} gamma sets, {len(alphas)} alpha tables)")
+
+
 def create_wilson_loop_callback(geometry) -> Callable:
     """
     Create a callback to calculate Wilson loops during optimization.

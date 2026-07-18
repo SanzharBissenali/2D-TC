@@ -99,9 +99,14 @@ def parse_arguments() -> Dict[str, Any]:
     # Symmetric-block (Block 3) selector + factored-attention transformer hyperparameters.
     # 'cnn' (default) = original global-kernel invariant CNN; 'transformer' = replace Block 3
     # with a factored-attention encoder stack (Block 1 + Wilson nonlinearity unchanged).
-    parser.add_argument('--symmetric_block', choices=['cnn', 'transformer'], default='cnn',
-                        help='Architecture for Block 3 (post-Wilson): cnn or transformer')
-    parser.add_argument('--tf_layers', type=int, default=2, help='Transformer: number of encoder blocks')
+    parser.add_argument('--symmetric_block', choices=['cnn', 'transformer', 'full_transformer'], default='cnn',
+                        help="Block-3 arch: 'cnn' | 'transformer' (v1) | 'full_transformer' (v2, whole pipeline)")
+    parser.add_argument('--tf_layers', type=int, default=2,
+                        help='Transformer: number of encoder blocks (Block 2 in full_transformer)')
+    parser.add_argument('--tf1_layers', type=int, default=1,
+                        help='full_transformer: number of Block-1 spatial-attention encoder blocks')
+    parser.add_argument('--tf_gamma_init', type=float, default=7.862,
+                        help='full_transformer: local gamma init for the exp(-gamma d) distance kernel')
     parser.add_argument('--tf_dmodel', type=int, default=8, help='Transformer: embedding dimension d')
     parser.add_argument('--tf_heads', type=int, default=2, help='Transformer: number of attention heads (must divide d)')
     parser.add_argument('--tf_ffn_mult', type=int, default=2, help='Transformer: FFN hidden = tf_ffn_mult * d')
@@ -155,6 +160,8 @@ def parse_arguments() -> Dict[str, Any]:
             # Symmetric-block / transformer defaults (legacy positional path)
             'symmetric_block': 'cnn',
             'tf_layers': 2,
+            'tf1_layers': 1,
+            'tf_gamma_init': 7.862,
             'tf_dmodel': 8,
             'tf_heads': 2,
             'tf_ffn_mult': 2,
@@ -224,6 +231,9 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
         "t_sample": [],
         "t_grad": [],
         "t_sr": [],
+        "grad_norm": [],
+        "dtheta_norm": [],
+        "diagnostics": [],
         "order_params": {
             "magnetization_Xmean": [],
             "magnetization_Xstd": [],
@@ -252,6 +262,8 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "n_chann_noninv": config["channels_noninv"],
             "symmetric_block": [config.get("symmetric_block", "cnn")],
             "tf_layers": [config.get("tf_layers", 0)],
+            "tf1_layers": [config.get("tf1_layers", 0)],
+            "tf_gamma_init": [config.get("tf_gamma_init", 0.0)],
             "tf_dmodel": [config.get("tf_dmodel", 0)],
             "tf_heads": [config.get("tf_heads", 0)],
             "tf_ffn_mult": [config.get("tf_ffn_mult", 0)],

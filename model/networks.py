@@ -606,7 +606,46 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
     
     # Convert plaq_all to a tuple of tuples for hashability
     plaq_all_tuple = tuple(tuple(p) for p in plaq_all)
-    
+
+    # v2: full-transformer pipeline replaces the ENTIRE Combo stack (Block 1 CNN +
+    # Wilson + Block 3 CNN) with transformers. Exact A_v symmetry is preserved at init
+    # by the odd embedding + identity-init Block-1 blocks + channelwise Wilson fusion.
+    if config.get('symmetric_block', 'cnn') == 'full_transformer':
+        from model.spatial_attention_block import FullTransformer, edge_displacement_table
+        from model.transformer_block import plaquette_displacement_table
+        assert config['tf_dmodel'] % config['tf_heads'] == 0, (
+            f"tf_dmodel ({config['tf_dmodel']}) must be divisible by tf_heads ({config['tf_heads']})"
+        )
+        assert dtype == "float64", (
+            f"full_transformer is validated only for the sign-free real path (dtype float64), got "
+            f"{dtype!r}; the complex path (softmax/LayerNorm over complex) is future work."
+        )
+        assert all(e >= 0 for p in plaq_all_tuple for e in p), (
+            "full_transformer Wilson fusion needs 4 valid edges per plaquette (no -1 sentinel)"
+        )
+        # Block-1 edge table (orientation-resolved, OBC, no wrap)
+        orient_e, D_e, n_disp_e = edge_displacement_table(kernel_manager.arr_coord)
+        # Block-2 plaquette table (displacement-only; reuses v1)
+        D_p, n_disp_p = plaquette_displacement_table(
+            kernel_manager.dg_p.positions, kernel_manager.Lx, kernel_manager.Ly
+        )
+        # hashable static tables (flax module fields)
+        positions_e = tuple(tuple(float(v) for v in row)
+                            for row in np.asarray(kernel_manager.arr_coord))
+        D_e_t = tuple(tuple(int(v) for v in row) for row in D_e)
+        D_p_t = tuple(tuple(int(v) for v in row) for row in D_p)
+        orient_e_t = tuple(int(v) for v in orient_e)
+        readout_K = config.get('tf_readout_K', 0) or config['tf_dmodel']
+        full = FullTransformer(
+            n1=config['tf1_layers'], d_model=config['tf_dmodel'], n_heads=config['tf_heads'],
+            n_disp_e=n_disp_e, D_e=D_e_t, positions_e=positions_e, orient_e=orient_e_t,
+            gamma_init=config['tf_gamma_init'], plaq_all=plaq_all_tuple,
+            n2=config['tf_layers'], n_disp_p=n_disp_p, D_p=D_p_t,
+            ffn_mult=config['tf_ffn_mult'], activation=config['tf_activation'],
+            readout_K=readout_K, complex_output=config['tf_complex_output'], dtype=dtype,
+        )
+        return create_sequential_model(full)
+
     # Create invariant layers
     inv_sequence = [
         CNN_invariant(

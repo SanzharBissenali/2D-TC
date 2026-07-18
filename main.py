@@ -29,7 +29,7 @@ from simulation.optimizer import run_tdvp, create_final_callback
 from simulation.observables import (
     create_wilson_loop_callback, create_magnetization_callback,
     create_renyi_callback, create_2point_callback, create_conditional_callbacks,
-    create_plaquette_stabilizer_callback
+    create_plaquette_stabilizer_callback, check_Av_invariance, dump_attention
 )
 from utils.config import setup_environment, parse_arguments, create_data_dict, save_data
 from utils.io import save_model, log_runtime, record_experiment_info
@@ -133,9 +133,19 @@ def main():
     with open(config['filename'], 'w') as f:
         json.dump(data, f)
     
+    # v2 correctness gate: exact A_v (vertex/gauge) symmetry at init must hold to machine
+    # precision (odd embedding + identity Block-1 sublayers + channelwise Wilson fusion).
+    if config.get('symmetric_block') == 'full_transformer':
+        dev = check_Av_invariance(model, vs.parameters, geometry)
+        print(f"[A_v init-invariance] max |Delta log psi| = {dev:.2e}")
+        assert dev < 1e-6, (
+            f"A_v symmetry BROKEN at init (max dev {dev:.2e}) -- check odd embedding / "
+            f"zero-init Block-1 sublayers / channelwise Wilson fusion"
+        )
+
     # Setup callbacks for observables
     callbacks = create_conditional_callbacks(geometry)
-    
+
     # Print information before starting optimization
     print(f"Number of qubits: {geometry.N}")
     print(f"Number of model parameters: {vs.n_parameters}")
@@ -176,7 +186,11 @@ def main():
     # Final plaquette-stabilizer <B_p> (contamination diagnostic; ~1 on this cut)
     callback = create_plaquette_stabilizer_callback(geometry)
     callback(vs, -1, -1, config)
-    
+
+    # Attention interpretability dump (gamma ranges + alpha tables) for full_transformer
+    if config.get('symmetric_block') == 'full_transformer':
+        dump_attention(vs, config)
+
     # Log runtime
     log_runtime(config, start_time)
     

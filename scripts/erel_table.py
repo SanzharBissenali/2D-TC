@@ -22,7 +22,7 @@ KILL = 1e-5
 TAIL = 10
 NQS_DIR = sys.argv[1] if len(sys.argv) > 1 else "results/nqs"
 ED_DIR = "results/ed"
-PAT = re.compile(r"G-equiv_1_L(\d+)_hx([0-9.]+)_hz([0-9.]+)_([a-z]+)\.json$")
+PAT = re.compile(r"G-equiv_1_L(\d+)_hx([0-9.]+)_hz([0-9.]+)_([a-z0-9]+)\.json$")
 
 
 def converged_energy(path):
