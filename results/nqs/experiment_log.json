@@ -2514,5 +2514,107 @@
     "n_params": 1684,
     "final_energy": -25.2470893393281,
     "runtime": 1155.9331586360931
+  },
+  {
+    "run_id": "b9ff5e74",
+    "timestamp": "2026-07-17 21:20:20",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 4,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.1,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_L4_hx0.00_hz0.10_tfg.json",
+        "G-equiv_1_L4_hx0.00_hz0.10_tfg.mpack"
+      ]
+    },
+    "n_params": 1556,
+    "final_energy": -25.05205041249926,
+    "runtime": 1158.580037355423
+  },
+  {
+    "run_id": "4a8befe0",
+    "timestamp": "2026-07-17 21:30:56",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 6,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.15,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_L6_hx0.00_hz0.15_cnn.json",
+        "G-equiv_1_L6_hx0.00_hz0.15_cnn.mpack"
+      ]
+    },
+    "n_params": 3857,
+    "final_energy": -61.343136701710996,
+    "runtime": 1794.4795978069305
+  },
+  {
+    "run_id": "04491b2b",
+    "timestamp": "2026-07-17 21:39:58",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 4,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.2,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_L4_hx0.00_hz0.20_tfg.json",
+        "G-equiv_1_L4_hx0.00_hz0.20_tfg.mpack"
+      ]
+    },
+    "n_params": 1556,
+    "final_energy": -25.24678521017103,
+    "runtime": 1147.3385043144226
   }
 ]
