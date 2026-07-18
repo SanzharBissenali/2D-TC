@@ -71,6 +71,12 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True):
         result["magnetization_X"] = sx
         result["magnetization_Z_mean"] = float(np.mean(sz))
         result["magnetization_X_mean"] = float(np.mean(sx))
+        # <sigma^y> is the order parameter for the pure-hy transition. sigmay is
+        # complex, so this is only meaningful (and only built) when dtype=complex.
+        if dtype == "complex":
+            sy = [_expect(psi0, nk.operator.spin.sigmay(hi, j).to_sparse()) for j in range(geometry.N)]
+            result["magnetization_Y"] = sy
+            result["magnetization_Y_mean"] = float(np.mean(sy))
 
     return result
 
