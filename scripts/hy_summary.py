@@ -87,10 +87,17 @@ def cell(x, width, prec=None):
 
 def main():
     # Collect: rows[(L, arm)] = list of (hy, E, sy, bp)
+    # Only COMPLETE runs (the .mpack is written after the full TDVP loop finishes,
+    # per main.py) — a walltime-killed partial run has a garbage, unconverged energy
+    # (e.g. E off by 20, <B_p> negative) that would corrupt the transition read.
     rows = {}
+    skipped = 0
     for path in sorted(glob.glob(os.path.join(NQS_DIR, "G-equiv_1_L*_hy*_*.json"))):
         m = PAT.search(os.path.basename(path))
         if not m:
+            continue
+        if not os.path.exists(path[:-5] + ".mpack"):
+            skipped += 1
             continue
         L, arm, hy = int(m.group(1)), m.group(4), float(m.group(3))
         d = _load(path)
@@ -99,6 +106,8 @@ def main():
         rows.setdefault((L, arm), []).append(
             (hy, final_energy(d), final_sy(d), final_bp(d))
         )
+    if skipped:
+        print(f"(skipped {skipped} incomplete run(s) with no .mpack — still training / walltime-killed)")
 
     if not rows:
         print(f"no hy run files in {NQS_DIR}")
