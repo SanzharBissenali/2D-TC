@@ -80,8 +80,16 @@ def main():
     for (L, hz), d in sorted(by.items()):
         if "cnn" in d and "tf" in d:
             ratio = d["tf"] / d["cnn"] if d["cnn"] else float("inf")
-            verdict = "tf≈cnn (match)" if ratio <= 2.0 else "tf WORSE than cnn -> consider tweak"
-            print(f"  L{L} hz{hz:.2f}: tf/cnn rel_err ratio = {ratio:.2f}  [{verdict}]")
+            # Tweak ONLY if tf ABSOLUTELY fails the kill criterion AND is >2x worse than
+            # cnn. A large ratio at the sub-1e-5 floor is just MC noise (both converged).
+            if d["tf"] <= KILL:
+                verdict = "tf PASSES <=1e-5 (converged) -> NO tweak"
+            elif ratio > 2.0:
+                verdict = "tf >1e-5 AND >2x cnn -> CONSIDER TWEAK"
+            else:
+                verdict = "both >1e-5, tf~cnn -> protocol (no tweak)"
+            print(f"  L{L} hz{hz:.2f}: tf={d['tf']:.2e} cnn={d['cnn']:.2e} "
+                  f"ratio={ratio:.2f}  [{verdict}]")
 
 
 if __name__ == "__main__":
