@@ -51,6 +51,8 @@ ARM_FLAGS[v2h]="--symmetric_block full_transformer --tf1_layers 1 --tf_layers 2 
 # (cond ~1e9 at 6e-5). Trailing --diag_shift overrides the base 6e-5 (argparse: last wins).
 ARM_FLAGS[v2ds3e4]="${ARM_FLAGS[v2]} --diag_shift 3e-4"
 ARM_FLAGS[v2ds1e3]="${ARM_FLAGS[v2]} --diag_shift 1e-3"
+# lr-schedule retune: 1e-3 diag_shift + cosine dt-decay to 0.1x (settle the late-training wander).
+ARM_FLAGS[v2cos]="${ARM_FLAGS[v2]} --diag_shift 1e-3 --lr_schedule cosine --lr_final_frac 0.1"
 # Timing arms: 10-step s/step benchmark at large L (residual-stream scaling knob d).
 # Distinct names => never collide with accuracy runs. t8 = d=8, t16 = d=16.
 ARM_FLAGS[t8]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"

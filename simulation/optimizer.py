@@ -109,11 +109,18 @@ def run_tdvp(
     qgt_mode = 'complex' if (config.get('tf_complex_output', False)
                              and config.get('dtype') == 'float64') else None
 
+    # dt (learning-rate) schedule: cosine-decay to lr_final_frac*dt over the run damps the
+    # late-training SR wander (smaller steps settle into the minimum instead of overshooting).
+    lr_schedule = config.get('lr_schedule', 'const')
+    dt_final = config.get('lr_final_frac', 0.1) * dt
+
     loop = tqdm(range(n_iter))
     t = t_start
     
     for step in loop:
         step_start = time.time()
+        dt_step = (dt_final + 0.5 * (dt - dt_final) * (1.0 + np.cos(np.pi * step / max(n_iter - 1, 1)))
+                   if lr_schedule == 'cosine' else dt)
 
         # --- Per-step wall-clock split (block_until_ready defeats JAX async dispatch
         # so each timer captures real work, not just the launch). This is a
@@ -146,19 +153,19 @@ def run_tdvp(
         t_sr = time.time() - t0
         dtheta_norm = _tree_norm(dtheta)
 
-        # Update parameters
-        vstate.parameters = jax.tree.map(lambda x, y: x + dt * y, vstate.parameters, dtheta)
+        # Update parameters (dt_step = scheduled learning rate)
+        vstate.parameters = jax.tree.map(lambda x, y: x + dt_step * y, vstate.parameters, dtheta)
 
         # Save optimization data
         update_data(filename, [
             "iters", "energy", "energy_eom", "energy_var", "tau_corr",
             "Rsplit", "Vscore", "MCMC_accepted", "MCMC_total",
-            "t_sample", "t_grad", "t_sr", "grad_norm", "dtheta_norm"
+            "t_sample", "t_grad", "t_sr", "grad_norm", "dtheta_norm", "dt_step"
         ], [
             t, E.mean, E.error_of_mean, E.variance, E.tau_corr,
             E.R_hat, config['N'] * E.variance / E.mean**2,
             vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps,
-            t_sample, t_grad, t_sr, grad_norm, dtheta_norm
+            t_sample, t_grad, t_sr, grad_norm, dtheta_norm, dt_step
         ])
 
         # Check for NaN values
@@ -196,8 +203,8 @@ def run_tdvp(
             f"E: {E.mean:.6f} ± {E.error_of_mean:.6f} | Vscore: {vscore:.3e} | {step_time:.2f}s/step"
         )
         
-        # Update time
-        t = t + dt
+        # Update time (advance by the scheduled step)
+        t = t + dt_step
     
     return vstate
 

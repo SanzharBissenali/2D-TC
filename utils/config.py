@@ -85,6 +85,10 @@ def parse_arguments() -> Dict[str, Any]:
     parser.add_argument('--dt', type=float, required=True, help='Time step')
     parser.add_argument('--diag_shift', type=float, required=True, help='Diagonal shift')
     parser.add_argument('--sim_time', type=float, default=3.5, help='Simulation time')
+    parser.add_argument('--lr_schedule', choices=['const', 'cosine'], default='const',
+                        help='dt (learning-rate) schedule: const, or cosine-decay to lr_final_frac*dt')
+    parser.add_argument('--lr_final_frac', type=float, default=0.1,
+                        help='cosine schedule: final dt as a fraction of the initial dt (default 0.1)')
     
     # Neural network parameters
     parser.add_argument('--architecture', type=str, choices=['Combo', 'RPP'], default='Combo', 
@@ -155,6 +159,8 @@ def parse_arguments() -> Dict[str, Any]:
             'chunk_size': 2**11,
             'n_sweeps': 2**10 // 2,  # Will be overridden by N/2 if not provided
             'sim_time': 3.5,
+            'lr_schedule': 'const',
+            'lr_final_frac': 0.1,
             'rescale': 1.0,
             'annotation': "cluster_16x16_run_hy",
             # Symmetric-block / transformer defaults (legacy positional path)
@@ -233,6 +239,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
         "t_sr": [],
         "grad_norm": [],
         "dtheta_norm": [],
+        "dt_step": [],
         "diagnostics": [],
         "order_params": {
             "magnetization_Xmean": [],
@@ -284,6 +291,8 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "chunk_size=": [config["chunk_size"]],
             "dt": [config["dt"]],
             "diag_shift": [config["diag_shift"]],
+            "lr_schedule": [config.get("lr_schedule", "const")],
+            "lr_final_frac": [config.get("lr_final_frac", 0.1)],
             "diag_shift_init": ["None"],
             "param_dtype": [str(config["dtype"])],
             "runtime": [],
