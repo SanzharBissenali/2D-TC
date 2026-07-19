@@ -47,6 +47,10 @@ ARM_FLAGS[v1tf]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_
 # Primary v2 arm: n1=2, n2=2, d=8, h=2, FFN 2d, ReLU (~2688 params @L4).
 ARM_FLAGS[v2]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
 ARM_FLAGS[v2h]="--symmetric_block full_transformer --tf1_layers 1 --tf_layers 2 --tf_dmodel 4 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
+# diag_shift retune arms: stronger SR regularization to damp the late-training QGT blow-up
+# (cond ~1e9 at 6e-5). Trailing --diag_shift overrides the base 6e-5 (argparse: last wins).
+ARM_FLAGS[v2ds3e4]="${ARM_FLAGS[v2]} --diag_shift 3e-4"
+ARM_FLAGS[v2ds1e3]="${ARM_FLAGS[v2]} --diag_shift 1e-3"
 
 echo "=== driver v2: LX=$LX SIM_TIME=$SIM_TIME ARMS=[$ARMS] HZ=[$HZ_LIST] SEED=$SEED ==="
 for hz in $HZ_LIST; do

@@ -64,6 +64,7 @@ usage: bash scripts/cluster.sh <command>
 
   status              squeue for your jobs
   sync                git pull --ff-only on the cluster (fetch latest code)
+  checkout <branch>   fetch + checkout a branch on the cluster
   logs [pattern]      tail the newest logs/*<pattern>*.out
   fetch               commit+push results/ on the cluster, then git pull locally
   submit <jobfile>    sbatch a job  (PROMPTS; consult first — not allowlisted)
@@ -79,6 +80,10 @@ case "$cmd" in
         ;;
     sync)
         remote 'git pull --ff-only'
+        ;;
+    checkout)
+        shift; br="${1:?usage: bash scripts/cluster.sh checkout <branch>}"
+        remote "git fetch origin && git checkout '$br' && git pull --ff-only"
         ;;
     logs)
         shift; pat="${1:-}"
