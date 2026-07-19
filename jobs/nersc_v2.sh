@@ -53,13 +53,17 @@ ARM_FLAGS[v2ds3e4]="${ARM_FLAGS[v2]} --diag_shift 3e-4"
 ARM_FLAGS[v2ds1e3]="${ARM_FLAGS[v2]} --diag_shift 1e-3"
 # lr-schedule retune: 1e-3 diag_shift + cosine dt-decay to 0.1x (settle the late-training wander).
 ARM_FLAGS[v2cos]="${ARM_FLAGS[v2]} --diag_shift 1e-3 --lr_schedule cosine --lr_final_frac 0.1"
+# Campaign recipe: 3e-4 diag_shift (deepest convergence) + gentle cosine lr to 0.25x (settles the
+# tail without starving fine-convergence). d=8 and d=16 residual streams.
+ARM_FLAGS[v2c8]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
+ARM_FLAGS[v2c16]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
 # Timing arms: 10-step s/step benchmark at large L (residual-stream scaling knob d).
 # Distinct names => never collide with accuracy runs. t8 = d=8, t16 = d=16.
 ARM_FLAGS[t8]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
 ARM_FLAGS[t16]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
 
 echo "=== driver v2: LX=$LX SIM_TIME=$SIM_TIME ARMS=[$ARMS] HZ=[$HZ_LIST] SEED=$SEED ==="
-for hz in $HZ_LIST; do
+for hz in ${HZ_LIST//,/ }; do   # comma OR space separated (commas dodge the --export space bug)
     for arm in $ARMS; do
         jobid=$(printf "L%d_hx%.2f_hz%.2f_%s" "$LX" "$HX" "$hz" "$arm")
         base="$OUTDIR/G-equiv_1_${jobid}"
