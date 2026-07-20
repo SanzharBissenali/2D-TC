@@ -80,8 +80,8 @@ ARM_FLAGS[t8]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 -
 ARM_FLAGS[t16]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
 
 echo "=== driver v2: LX=$LX SIM_TIME=$SIM_TIME ARMS=[$ARMS] HZ=[$HZ_LIST] SEED=$SEED ==="
-for hz in ${HZ_LIST//,/ }; do   # comma OR space separated (commas dodge the --export space bug)
-    for arm in $ARMS; do
+for hz in ${HZ_LIST//[:,]/ }; do   # ':' , ',' or space separated. ':' survives sbatch --export
+    for arm in ${ARMS//[:,]/ }; do  # (no spaces => no ssh re-tokenize; no commas => not eaten by --export)
         jobid=$(printf "L%d_hx%.2f_hz%.2f_%s" "$LX" "$HX" "$hz" "$arm")
         base="$OUTDIR/G-equiv_1_${jobid}"
         if python "$REPO/scripts/is_complete.py" "$base" "$LX"; then
