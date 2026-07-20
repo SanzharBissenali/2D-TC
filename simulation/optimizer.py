@@ -189,12 +189,13 @@ def run_tdvp(
                 # 1 - |<e^{i*theta}>|. Sign-FREE => ~0 (phase constant up to a global gauge);
                 # sign-FULL => >0 (the complex readout is genuinely encoding a nontrivial phase).
                 # Only on the complex-readout path (qgt_mode=='complex') so real runs pay nothing.
-                if qgt_mode == 'complex':
-                    # log_value wants a flat (M, N) batch and vmaps the single-sample model
-                    # over it; vstate.samples is 3D (n_chains, n_samples_per_chain, N), so
-                    # flatten first (passing 3D feeds a per-chain batch into the CNN's
-                    # single-config reshape and errors).
-                    _flat = samples.reshape(-1, samples.shape[-1])
+                # log_value is a full EXTRA forward pass; doing it every K_diag was ~1000s/run
+                # overhead (dominated wall-clock). phase_circ_var is a slowly-varying convergence
+                # quantity, so compute it only every K_qgt (5x/run) on a 2048-sample subset.
+                # flatten first: vstate.samples is 3D (n_chains, n_per_chain, N); passing 3D feeds a
+                # per-chain batch into the CNN's single-config reshape and errors.
+                if qgt_mode == 'complex' and step % K_qgt == 0:
+                    _flat = samples.reshape(-1, samples.shape[-1])[:2048]
                     _theta = jnp.imag(vstate.log_value(_flat)).reshape(-1)
                     _pcv = float(1.0 - jnp.abs(jnp.mean(jnp.exp(1j * _theta))))
                     _diag["phase_circ_var"] = _pcv
