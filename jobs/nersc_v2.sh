@@ -41,6 +41,17 @@ SIM_TIME="${SIM_TIME:-2.0}"                       # 200 TDVP steps (dt=0.01)
 HZ_LIST="${HZ_LIST:-0.10 0.15 0.20 0.25 0.30}"    # 5 L=4 ED points (match analysis/01, 05)
 ARMS="${ARMS:-cnn v2}"                            # cnn skipped if already complete (skip-if-complete)
 
+# --- optional W&B logging (offline; `wandb sync` from a login node afterward) ---
+# Enable per-submit:  --export=ALL,WANDB=1[,WANDB_GROUP=...,WANDB_PROJECT=...]
+WANDB="${WANDB:-0}"
+WB_FLAGS=""
+if [ "$WANDB" = "1" ]; then
+    export WANDB_MODE="${WANDB_MODE:-offline}"
+    export WANDB_DIR="$REPO/wandb"; mkdir -p "$WANDB_DIR"
+    WB_FLAGS="--wandb --wandb_project ${WANDB_PROJECT:-2d-tc} --wandb_group ${WANDB_GROUP:-L${LX}}"
+    echo "=== W&B ON (mode=$WANDB_MODE dir=$WANDB_DIR group=${WANDB_GROUP:-L${LX}}) ==="
+fi
+
 declare -A ARM_FLAGS
 ARM_FLAGS[cnn]="--symmetric_block cnn"
 ARM_FLAGS[v1tf]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
@@ -57,6 +68,12 @@ ARM_FLAGS[v2cos]="${ARM_FLAGS[v2]} --diag_shift 1e-3 --lr_schedule cosine --lr_f
 # tail without starving fine-convergence). d=8 and d=16 residual streams.
 ARM_FLAGS[v2c8]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
 ARM_FLAGS[v2c16]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
+# v1 (Block-3-only transformer) campaign arms: IDENTICAL Block-3 config + IDENTICAL recipe to
+# v2c8/v2c16, but Block 1 stays the CNN. So v1cN vs v2cN isolates v2's transformer Block-1 +
+# Wilson-fusion as the ONLY difference => localizes any accuracy gap. Same 3e-4 diag_shift +
+# cosine lr->0.25x, 200 steps, seed 0.
+ARM_FLAGS[v1c8]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
+ARM_FLAGS[v1c16]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
 # Timing arms: 10-step s/step benchmark at large L (residual-stream scaling knob d).
 # Distinct names => never collide with accuracy runs. t8 = d=8, t16 = d=16.
 ARM_FLAGS[t8]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
@@ -78,7 +95,7 @@ for hz in ${HZ_LIST//,/ }; do   # comma OR space separated (commas dodge the --e
             --dt 0.01 --diag_shift 6e-5 --sim_time "$SIM_TIME" --seed "$SEED" \
             --architecture Combo --channels_noninv 1,16 --channels_inv 16,8,1 --kernel_size 2 \
             --n_samples_fin 8192 --use_custom_sampler \
-            ${ARM_FLAGS[$arm]} ) || echo "!!! $jobid FAILED (exit $?) — continuing"
+            ${ARM_FLAGS[$arm]} $WB_FLAGS ) || echo "!!! $jobid FAILED (exit $?) — continuing"
     done
 done
 echo "=== driver v2 done ==="
