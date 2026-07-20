@@ -67,6 +67,7 @@ usage: bash scripts/cluster.sh <command>
   checkout <branch>   fetch + checkout a branch on the cluster
   logs [pattern]      tail the newest logs/*<pattern>*.out
   fetch               commit+push results/ on the cluster, then git pull locally
+  wandb-sync          push offline W&B runs (wandb/) to the dashboard from the login node
   submit <jobfile>    sbatch a job  (PROMPTS; consult first — not allowlisted)
   cancel <jobid>      scancel a job (PROMPTS — not allowlisted)
 EOF
@@ -98,6 +99,13 @@ case "$cmd" in
             || echo "(cluster: push failed or nothing to push)"
         echo "--- pulling results locally ---"
         git -C "$REPO_ROOT" pull --ff-only
+        ;;
+    wandb-sync)
+        # Login nodes DO have internet (compute nodes don't) — push the offline run
+        # dirs to the dashboard. Safe to run repeatedly (mid-run for near-live views,
+        # or once after a job); wandb dedupes by run id. Needs a one-time `wandb login`.
+        remote 'module load conda >/dev/null 2>&1 && conda activate 2dtc && wandb sync --sync-all' \
+            || echo "(wandb sync failed — run \`wandb login\` on the login node once, or no offline runs yet)"
         ;;
     submit)
         shift; job="${1:?usage: bash scripts/cluster.sh submit <jobfile> [sbatch args...]}"

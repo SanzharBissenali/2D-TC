@@ -122,6 +122,14 @@ def parse_arguments() -> Dict[str, Any]:
                         help='Transformer: complex (real+1j*imag) readout for sign-full runs')
     parser.add_argument('--seed', type=int, default=0,
                         help='PRNG seed for the variational state (deterministic paired runs)')
+
+    # Weights & Biases logging (opt-in; off by default so baselines stay byte-identical).
+    # Offline-by-default on NERSC (compute nodes have no internet) — `wandb sync` later.
+    parser.add_argument('--wandb', action='store_true',
+                        help='Log E / Vscore / std / timings to Weights & Biases (offline by default)')
+    parser.add_argument('--wandb_project', type=str, default='2d-tc', help='W&B project name')
+    parser.add_argument('--wandb_entity', type=str, default=None, help='W&B entity (user/team); None => account default')
+    parser.add_argument('--wandb_group', type=str, default=None, help='W&B run group (e.g. per-L campaign)')
     
     # MCMC sampling parameters
     parser.add_argument('--n_samples', type=int, default=2**13, help='Total number of samples')
@@ -174,7 +182,11 @@ def parse_arguments() -> Dict[str, Any]:
             'tf_activation': 'relu',
             'tf_readout_K': 0,
             'tf_complex_output': False,
-            'seed': 0
+            'seed': 0,
+            'wandb': False,
+            'wandb_project': '2d-tc',
+            'wandb_entity': None,
+            'wandb_group': None
         }
     else:
         args = vars(parser.parse_args())

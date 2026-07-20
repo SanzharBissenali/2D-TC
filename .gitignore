@@ -20,3 +20,6 @@ logs/
 
 # Notebook-generated figures (regenerable from analysis/*.ipynb + results/)
 figures/
+
+# W&B offline run dirs (streamed on the compute node, pushed via `wandb sync`)
+wandb/

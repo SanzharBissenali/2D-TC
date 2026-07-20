@@ -13,6 +13,7 @@ from tqdm import tqdm
 from typing import Dict, Any, Callable, Optional, List, Tuple
 
 from utils.config import update_data
+from utils import wandb_logger
 
 
 # --- instability instrumentation (arm-agnostic; used by both CNN and transformer arms) ---
@@ -174,6 +175,7 @@ def run_tdvp(
             break
 
         # Heavier diagnostics (per-block grad norms, QGT conditioning, attention gamma) every K_diag.
+        wb_extra = {}   # optional fields folded into this step's single wandb.log (below)
         if step % K_diag == 0:
             try:
                 _diag = {
@@ -181,8 +183,13 @@ def run_tdvp(
                     "block_grad_norms": _block_norms(f),
                     "gammas": _gammas(vstate.parameters),
                 }
+                # Per-block grad norms as flat scalars => one panel per block on the dashboard.
+                wb_extra.update({f"grad_block/{b}": v for b, v in _diag["block_grad_norms"].items()})
                 if step % K_qgt == 0:                     # QGT SVD is O(P^3) on host -> coarse cadence
                     _diag["qgt"] = _qgt_cond(S)
+                    if "cond" in _diag["qgt"]:
+                        wb_extra["qgt_cond"] = _diag["qgt"]["cond"]
+                        wb_extra["qgt_rank"] = _diag["qgt"]["rank"]
                 with open(filename, 'r') as _fh:
                     _d = json.load(_fh)
                 _d["diagnostics"].append(_diag)
@@ -202,7 +209,31 @@ def run_tdvp(
         loop.set_description(
             f"E: {E.mean:.6f} ± {E.error_of_mean:.6f} | Vscore: {vscore:.3e} | {step_time:.2f}s/step"
         )
-        
+
+        # W&B: one row per step (no-op unless --wandb). std = sqrt(Var); energy_err is the
+        # MC stderr of the mean. E.mean can be complex on the hy!=0 path => take .real.
+        n_acc = float(vstate.sampler_state.n_accepted)
+        n_tot = float(vstate.sampler_state.n_steps)
+        wandb_logger.log_step(step, {
+            "energy": float(jnp.real(E.mean)),
+            "energy_err": float(E.error_of_mean),
+            "energy_std": float(jnp.sqrt(jnp.abs(E.variance))),
+            "energy_var": float(jnp.real(E.variance)),
+            "Vscore": vscore,
+            "tau_corr": float(E.tau_corr),
+            "Rsplit": float(E.R_hat),
+            "grad_norm": grad_norm,
+            "dtheta_norm": dtheta_norm,
+            "dt_step": float(dt_step),
+            "t_sample": t_sample,
+            "t_grad": t_grad,
+            "t_sr": t_sr,
+            "step_time": step_time,
+            "mcmc_accept_frac": n_acc / max(n_tot, 1.0),
+            "sim_t": t,
+            **wb_extra,
+        })
+
         # Update time (advance by the scheduled step)
         t = t + dt_step
     

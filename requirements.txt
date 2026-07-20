@@ -12,6 +12,10 @@ matplotlib==3.10.1
 # Progress bars and utilities
 tqdm==4.67.1
 
+# Experiment tracking (optional; enable per-run with --wandb). Install once on a
+# NERSC login node: `pip install wandb` then `wandb login`.
+wandb>=0.17
+
 # Optional CUDA support (commented out as they depend on user's GPU setup)
 # jax-cuda12-plugin==0.5.1
 # jax-cuda12-pjrt==0.5.1 

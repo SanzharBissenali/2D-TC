@@ -33,6 +33,7 @@ from simulation.observables import (
 )
 from utils.config import setup_environment, parse_arguments, create_data_dict, save_data
 from utils.io import save_model, log_runtime, record_experiment_info
+from utils import wandb_logger
 
 # Import custom sampler if needed
 from simulation.custom_sampler import create_custom_sampler
@@ -54,7 +55,11 @@ def main():
     print("Configuration:")
     for key, value in config.items():
         print(f"  {key}: {value}")
-    
+
+    # Start optional W&B logging (no-op unless --wandb). Init here so the full,
+    # finalized config (incl. device-detected n_chains) is captured as run config.
+    wandb_logger.init_run(config)
+
     # Create data dictionary
     data = create_data_dict(config, gpu_assigned, node_assigned)
     
@@ -207,6 +212,25 @@ def main():
         }
     )
     
+    # W&B run-level summary: final energy + runtime + the last value of each order
+    # parameter (read back from the JSON the end-of-run callbacks just wrote).
+    try:
+        with open(config['filename'], 'r') as f:
+            _final = json.load(f)
+        _summary = {
+            "final_energy": float(np.real(np.complex128(_final["energy"][-1]))) if _final["energy"] else None,
+            "final_Vscore": float(_final["Vscore"][-1]) if _final["Vscore"] else None,
+            "runtime_s": time.time() - start_time,
+            "n_params": int(vs.n_parameters),
+        }
+        for k, v in _final.get("order_params", {}).items():
+            if v:  # keep the last recorded value of each observable
+                _summary[f"final_{k}"] = v[-1]
+        wandb_logger.log_summary(_summary)
+    except Exception as e:
+        print(f"[wandb] summary skipped: {e}")
+    wandb_logger.finish()
+
     print("Simulation complete.")
 
 if __name__ == "__main__":

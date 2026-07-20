@@ -209,6 +209,28 @@ required. Read-only ops (`status`/`sync`/`logs`/`fetch`) are allowlisted; `fetch
 brings results back (commit+push on cluster, pull locally) and is safe to run
 freely. Never allowlist `submit`/`cancel`.
 
+## Experiment tracking (Weights & Biases) — opt-in, offline-by-default
+Live-ish monitoring of E / V-score / energy-std / grad+dtheta norms / per-step timings
+/ QGT cond, plus final observables as run summary. **Opt-in** (`--wandb`; off => runs
+byte-identical), **offline by default** (compute nodes have no internet — logs to
+`wandb/`, pushed later from a login node). Zero-dep when off: `utils/wandb_logger.py`
+only imports `wandb` inside `init_run` and every entry point no-ops unless `wandb.run`
+is live.
+- **Code:** `utils/wandb_logger.py` (guarded init/log_step/log_summary/finish);
+  `optimizer.run_tdvp` logs one row/step; `main.py` inits after config-finalize +
+  logs summary/finish at the end. Args in `config.py`: `--wandb --wandb_project
+  (2d-tc) --wandb_entity --wandb_group`.
+- **Jobs:** `nersc_v2.sh` / `nersc_transformer.sh` take `WANDB=1` (per-submit
+  `--export=ALL,WANDB=1[,WANDB_GROUP=…,WANDB_PROJECT=…]`) → sets `WANDB_MODE=offline`,
+  `WANDB_DIR=$REPO/wandb`, appends `--wandb …`.
+- **One-time setup (login node):** `pip install wandb` (not in `2dtc` env yet) then
+  `wandb login` (needs the user's API key from wandb.ai/authorize). Key lives only on
+  the login node; never in git or on compute nodes.
+- **Push to dashboard:** `bash scripts/cluster.sh wandb-sync` (`wandb sync --sync-all`
+  from the login node; safe to re-run mid-training for near-live, dedupes by run id).
+- **Online (truly-live) is unverified** — would need compute-node internet (maybe an
+  `https_proxy`); test with a tiny job + `WANDB_MODE=online` before relying on it.
+
 ## Commands
 ```bash
 # ED benchmark (one hz point)

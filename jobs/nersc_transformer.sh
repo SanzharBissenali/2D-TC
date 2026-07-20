@@ -38,6 +38,17 @@ SIM_TIME="${SIM_TIME:-3.5}"
 HZ_LIST="${HZ_LIST:-0.10 0.15 0.20 0.25 0.30}"
 ARMS="${ARMS:-cnn tf tfg}"
 
+# --- optional W&B logging (offline; `wandb sync` from a login node afterward) ---
+# Enable per-submit:  --export=ALL,WANDB=1[,WANDB_GROUP=...,WANDB_PROJECT=...]
+WANDB="${WANDB:-0}"
+WB_FLAGS=""
+if [ "$WANDB" = "1" ]; then
+    export WANDB_MODE="${WANDB_MODE:-offline}"
+    export WANDB_DIR="$REPO/wandb"; mkdir -p "$WANDB_DIR"
+    WB_FLAGS="--wandb --wandb_project ${WANDB_PROJECT:-2d-tc} --wandb_group ${WANDB_GROUP:-L${LX}}"
+    echo "=== W&B ON (mode=$WANDB_MODE dir=$WANDB_DIR group=${WANDB_GROUP:-L${LX}}) ==="
+fi
+
 declare -A ARM_FLAGS
 ARM_FLAGS[cnn]="--symmetric_block cnn"
 ARM_FLAGS[tf]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
@@ -62,7 +73,7 @@ for hz in $HZ_LIST; do
             --dt 0.01 --diag_shift 6e-5 --sim_time "$SIM_TIME" --seed "$SEED" \
             --architecture Combo --channels_noninv 1,16 --channels_inv 16,8,1 --kernel_size 2 \
             --n_samples_fin 8192 --use_custom_sampler \
-            ${ARM_FLAGS[$arm]} ) || echo "!!! $jobid FAILED (exit $?) — continuing"
+            ${ARM_FLAGS[$arm]} $WB_FLAGS ) || echo "!!! $jobid FAILED (exit $?) — continuing"
     done
 done
 echo "=== driver done ==="
