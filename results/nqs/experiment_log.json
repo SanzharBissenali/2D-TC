@@ -1800,5 +1800,39 @@
     "n_params": 4484,
     "final_energy": -25.529524551513468,
     "runtime": 940.8750398159027
+  },
+  {
+    "run_id": "7f354855",
+    "timestamp": "2026-07-20 00:40:59",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 8,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.3,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_L8_hx0.00_hz0.30_v1c8.json",
+        "G-equiv_1_L8_hx0.00_hz0.30_v1c8.mpack"
+      ]
+    },
+    "n_params": 2260,
+    "final_energy": -115.7388063638825,
+    "runtime": 3726.502219438553
   }
 ]
