@@ -210,8 +210,16 @@ def parse_arguments() -> Dict[str, Any]:
     # Calculate kernel_size_inv based on Lx
     args['kernel_size_inv'] = args['Lx'] - 1
     
-    # Determine dtype based on parameters
-    if args['hy'] != 0.0 or args['Jy_p'] != 0.0 or args['Jy_v'] != 0.0:
+    # Determine dtype based on parameters.
+    # v3 (Viteritti et al., arXiv:2311.16889): with a transformer complex readout the DEEP
+    # ENCODER stays REAL (float64) and the complex amplitude/phase are injected only at the
+    # shallow readout (re + 1j*im). So --tf_complex_output keeps dtype float64 even for hy!=0,
+    # which also arms the non-holomorphic qgt_mode='complex' branch (optimizer.py, gated on
+    # tf_complex_output && dtype=='float64'). Without it, hy!=0 falls back to the legacy
+    # whole-model-complex CNN path, unchanged.
+    if args.get('tf_complex_output', False) and args.get('symmetric_block', 'cnn') in ('transformer', 'full_transformer'):
+        args['dtype'] = "float64"
+    elif args['hy'] != 0.0 or args['Jy_p'] != 0.0 or args['Jy_v'] != 0.0:
         args['dtype'] = "complex"
     else:
         args['dtype'] = "float64"

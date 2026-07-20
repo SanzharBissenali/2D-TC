@@ -74,6 +74,12 @@ ARM_FLAGS[v2c16]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 
 # cosine lr->0.25x, 200 steps, seed 0.
 ARM_FLAGS[v1c8]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
 ARM_FLAGS[v1c16]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --diag_shift 3e-4 --lr_schedule cosine --lr_final_frac 0.25"
+# v3 complex-readout arms (sign-full). --tf_complex_output keeps the encoder REAL (float64) and makes
+# only the shallow readout complex (Viteritti 2311.16889) => arms qgt_mode='complex'. On this hz-sweep
+# script (hy=0) these are the Gate-A sign-free reduction check: energy must match the real-head v1cN and
+# phase circular-variance -> 0. The hy sweep itself runs via jobs/nersc_hy_sweep.sh.
+ARM_FLAGS[v1cx8]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --tf_complex_output --diag_shift 1e-3 --lr_schedule cosine --lr_final_frac 0.25"
+ARM_FLAGS[v1cx16]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --tf_complex_output --diag_shift 1e-3 --lr_schedule cosine --lr_final_frac 0.25"
 # Timing arms: 10-step s/step benchmark at large L (residual-stream scaling knob d).
 # Distinct names => never collide with accuracy runs. t8 = d=8, t16 = d=16.
 ARM_FLAGS[t8]="--symmetric_block full_transformer --tf1_layers 2 --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"

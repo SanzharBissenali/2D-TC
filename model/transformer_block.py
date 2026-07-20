@@ -167,11 +167,15 @@ class TransformerSymmetric(nn.Module):
         z = nn.LayerNorm(param_dtype=self.dtype, name="out_ln")(z)
 
         if self.complex_output:
-            re = nn.LayerNorm(param_dtype=self.dtype, name="out_ln_re")(
-                nn.Dense(self.readout_K, param_dtype=self.dtype, name="head_re")(z))
-            im = nn.LayerNorm(param_dtype=self.dtype, name="out_ln_im")(
-                nn.Dense(self.readout_K, param_dtype=self.dtype, name="head_im")(z))
-            out = re + 1j * im
+            # Shallow complex log-cosh RBM (Viteritti et al., arXiv:2311.16889, Eq. 3):
+            #   logPsi = sum_a log cosh(b_a + w_a . z),  b_a, w_a in C,  z in R^d.
+            # With dtype=float64 the two Dense layers carry the REAL params (Re w / Im w,
+            # Re b / Im b), so out = Dense_re(z) + 1j*Dense_im(z) == b_a + w_a . z exactly.
+            # NO LayerNorm on the complex pre-activation: the paper deliberately keeps all
+            # normalization in the real encoder (complex LN is ill-defined). The real out_ln(z)
+            # above already scales the pooled features.
+            out = nn.Dense(self.readout_K, param_dtype=self.dtype, name="head_re")(z) \
+                + 1j * nn.Dense(self.readout_K, param_dtype=self.dtype, name="head_im")(z)
         else:
             out = nn.Dense(self.readout_K, param_dtype=self.dtype, name="head")(z)
 

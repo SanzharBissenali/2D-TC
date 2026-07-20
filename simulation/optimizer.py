@@ -185,6 +185,15 @@ def run_tdvp(
                 }
                 # Per-block grad norms as flat scalars => one panel per block on the dashboard.
                 wb_extra.update({f"grad_block/{b}": v for b, v in _diag["block_grad_norms"].items()})
+                # v3 sign-full: phase usage = circular variance of Im(logPsi) over the samples,
+                # 1 - |<e^{i*theta}>|. Sign-FREE => ~0 (phase constant up to a global gauge);
+                # sign-FULL => >0 (the complex readout is genuinely encoding a nontrivial phase).
+                # Only on the complex-readout path (qgt_mode=='complex') so real runs pay nothing.
+                if qgt_mode == 'complex':
+                    _theta = jnp.imag(vstate.log_value(samples)).reshape(-1)
+                    _pcv = float(1.0 - jnp.abs(jnp.mean(jnp.exp(1j * _theta))))
+                    _diag["phase_circ_var"] = _pcv
+                    wb_extra["phase_circ_var"] = _pcv
                 if step % K_qgt == 0:                     # QGT SVD is O(P^3) on host -> coarse cadence
                     _diag["qgt"] = _qgt_cond(S)
                     if "cond" in _diag["qgt"]:

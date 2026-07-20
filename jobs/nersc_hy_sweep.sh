@@ -48,6 +48,12 @@ declare -A ARM_FLAGS
 ARM_FLAGS[cnn]="--symmetric_block cnn"
 ARM_FLAGS[tf]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu"
 ARM_FLAGS[tfg]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 6 --tf_heads 2 --tf_ffn_mult 4 --tf_activation gelu"
+# v3 sign-full: v1 (CNN Block1 + Wilson + transformer Block3) with the COMPLEX shallow readout
+# (Viteritti et al. 2311.16889). --tf_complex_output keeps the encoder real (float64) and injects
+# amplitude+phase only at the readout, arming qgt_mode='complex'. Trailing --diag_shift 1e-3 (paper's
+# value; last-wins over the base 6e-5) + cosine lr->0.25x settle the non-holomorphic SR.
+ARM_FLAGS[v1cx8]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 8 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --tf_complex_output --diag_shift 1e-3 --lr_schedule cosine --lr_final_frac 0.25"
+ARM_FLAGS[v1cx16]="--symmetric_block transformer --tf_layers 2 --tf_dmodel 16 --tf_heads 2 --tf_ffn_mult 2 --tf_activation relu --tf_complex_output --diag_shift 1e-3 --lr_schedule cosine --lr_final_frac 0.25"
 
 # Contiguous chunk of the points for this array task (defaults => all points when
 # run without --array, e.g. the L=4 single-task job or a manual test).
@@ -60,7 +66,7 @@ end=$(( start + ppt )); (( end > N )) && end=N
 echo "=== L=$LX task $i/$T -> points [$start,$end) of $N | ARMS=[$ARMS] sim_time=$SIM_TIME seed=$SEED ==="
 for (( k=start; k<end; k++ )); do
     hy=${HY_VALUES[$k]}
-    for arm in $ARMS; do
+    for arm in ${ARMS//[:,]/ }; do   # ':' / ',' / space separated (':' survives sbatch --export)
         jobid=$(printf "L%d_hx%.2f_hy%.2f_%s" "$LX" "$HX" "$hy" "$arm")
         base="$OUTDIR/G-equiv_1_${jobid}"
         if python "$REPO/scripts/is_complete.py" "$base" "$LX"; then
