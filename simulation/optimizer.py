@@ -190,7 +190,12 @@ def run_tdvp(
                 # sign-FULL => >0 (the complex readout is genuinely encoding a nontrivial phase).
                 # Only on the complex-readout path (qgt_mode=='complex') so real runs pay nothing.
                 if qgt_mode == 'complex':
-                    _theta = jnp.imag(vstate.log_value(samples)).reshape(-1)
+                    # log_value wants a flat (M, N) batch and vmaps the single-sample model
+                    # over it; vstate.samples is 3D (n_chains, n_samples_per_chain, N), so
+                    # flatten first (passing 3D feeds a per-chain batch into the CNN's
+                    # single-config reshape and errors).
+                    _flat = samples.reshape(-1, samples.shape[-1])
+                    _theta = jnp.imag(vstate.log_value(_flat)).reshape(-1)
                     _pcv = float(1.0 - jnp.abs(jnp.mean(jnp.exp(1j * _theta))))
                     _diag["phase_circ_var"] = _pcv
                     wb_extra["phase_circ_var"] = _pcv
