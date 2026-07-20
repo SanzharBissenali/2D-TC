@@ -43,7 +43,15 @@ def create_hamiltonian(
     """
     H = 0
     N = hi.size
-    
+
+    # The Hamiltonian OPERATOR must be complex whenever sigma^y appears (hy or a Y coupling),
+    # since sigmay is imaginary. This is independent of the MODEL parameter dtype: for the v3
+    # complex-readout path the model stays float64 (real encoder; amplitude+phase injected only
+    # at the shallow readout), while the operator still needs to be complex. Decouple here so a
+    # float64 model dtype no longer trips the "Y field requires complex Hamiltonian" assertion.
+    if hy != 0 or Jy_v != 0 or Jy_p != 0:
+        dtype = "complex"
+
     # Add vertex terms
     for v in range(0, len(vertex_all)):
         # XXXX vertex terms
