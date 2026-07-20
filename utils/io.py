@@ -91,7 +91,16 @@ def record_experiment_info(config: Dict[str, Any], run_id: str, description: str
         """Convert JAX arrays and other non-serializable types to Python native types."""
         import numpy as np
         import jax.numpy as jnp
-        
+
+        # Complex scalars -> {"real","imag"} (Im is physical on the sign-full hy path; stock
+        # json can't serialize complex, and .tolist() below would yield a python complex that
+        # still fails). Handle BEFORE the .tolist() branch.
+        if isinstance(obj, complex):
+            return {"real": obj.real, "imag": obj.imag}
+        if np.iscomplexobj(obj) and np.ndim(obj) == 0:
+            c = complex(np.asarray(obj))
+            return {"real": c.real, "imag": c.imag}
+
         if hasattr(obj, 'tolist'):
             # Handle NumPy and JAX arrays
             return obj.tolist()
@@ -147,6 +156,12 @@ def record_experiment_info(config: Dict[str, Any], run_id: str, description: str
         
         f.seek(0)
         f.truncate()
-        json.dump(data, f, indent=2)
+        def _json_default(o):  # safety net: serialize any stray complex/ndarray
+            if isinstance(o, complex):
+                return {"real": o.real, "imag": o.imag}
+            if hasattr(o, "tolist"):
+                return o.tolist()
+            raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+        json.dump(data, f, indent=2, default=_json_default)
     
     print(f"Experiment info recorded with run_id: {run_id}") 
