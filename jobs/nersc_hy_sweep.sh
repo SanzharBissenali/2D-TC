@@ -41,6 +41,19 @@ REPO=$SLURM_SUBMIT_DIR
 OUTDIR=$REPO/results/nqs
 mkdir -p "$OUTDIR"
 
+# --- optional W&B logging (offline; `wandb sync` from a login node afterward) ---
+# Enable per-submit:  --export=ALL,LX=..,WANDB=1[,WANDB_GROUP=...,WANDB_PROJECT=...]
+# For the sign-full (hy) runs this captures energy / Vscore / grad-norms / QGT cond AND the
+# phase circular-variance per step (optimizer.py folds wb_extra into each wandb.log row).
+WANDB="${WANDB:-0}"
+WB_FLAGS=""
+if [ "$WANDB" = "1" ]; then
+    export WANDB_MODE="${WANDB_MODE:-offline}"
+    export WANDB_DIR="$REPO"   # wandb appends its own /wandb => runs at $REPO/wandb/offline-run-*
+    WB_FLAGS="--wandb --wandb_project ${WANDB_PROJECT:-2d-tc} --wandb_group ${WANDB_GROUP:-hy_L${LX}}"
+    echo "=== W&B ON (mode=$WANDB_MODE dir=$WANDB_DIR group=${WANDB_GROUP:-hy_L${LX}}) ==="
+fi
+
 HY_VALUES=(0.80 0.85 0.90 0.95 1.00 1.05 1.10 1.15 1.20)
 N=${#HY_VALUES[@]}
 
@@ -81,7 +94,7 @@ for (( k=start; k<end; k++ )); do
             --dt 0.01 --diag_shift 6e-5 --sim_time "$SIM_TIME" --seed "$SEED" \
             --architecture Combo --channels_noninv 1,16 --channels_inv 16,8,1 --kernel_size 2 \
             --n_samples_fin 8192 --use_custom_sampler \
-            ${ARM_FLAGS[$arm]} ) || echo "!!! $jobid FAILED (exit $?) — continuing"
+            ${ARM_FLAGS[$arm]} $WB_FLAGS ) || echo "!!! $jobid FAILED (exit $?) — continuing"
     done
 done
 echo "=== L=$LX task $i done ==="
