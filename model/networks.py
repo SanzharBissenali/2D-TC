@@ -607,6 +607,45 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
     # Convert plaq_all to a tuple of tuples for hashability
     plaq_all_tuple = tuple(tuple(p) for p in plaq_all)
 
+    # Variant 3: standalone pure-plaquette transformer. Tokens are the classical
+    # stabilizer values t_p = B_p(s) (a change of variables, so exact A_v invariance
+    # holds by construction), embedded via a 2-entry lookup and processed by a full
+    # gated-attention encoder. No Block-1 CNN, no Wilson module, no Final(): the
+    # module consumes raw spins and returns log psi directly.
+    if config.get('symmetric_block', 'cnn') == 'plaquette_transformer':
+        from model.plaquette_transformer import (
+            PlaquetteTransformer, plaquette_displacement_table
+        )
+        assert config['tf_dmodel'] % config['tf_heads'] == 0, (
+            f"tf_dmodel ({config['tf_dmodel']}) must be divisible by tf_heads ({config['tf_heads']})"
+        )
+        assert dtype == "float64", (
+            f"plaquette_transformer is exactly A_v-invariant and validated only on the "
+            f"sign-free h_x cut (dtype float64), got {dtype!r}"
+        )
+        assert all(e >= 0 for p in plaq_all_tuple for e in p), (
+            "plaquette_transformer tokenization needs 4 valid edges per plaquette (no -1 sentinel)"
+        )
+        D, n_disp = plaquette_displacement_table(
+            kernel_manager.dg_p.positions, kernel_manager.Lx, kernel_manager.Ly
+        )
+        D_t = tuple(tuple(int(v) for v in row) for row in D)  # hashable
+        readout_K = config.get('tf_readout_K', 0) or config['tf_dmodel']
+        v3 = PlaquetteTransformer(
+            plaq_all=plaq_all_tuple,
+            n_layers=config['tf_layers'],
+            d_model=config['tf_dmodel'],
+            n_heads=config['tf_heads'],
+            n_disp=n_disp,
+            D=D_t,
+            readout_K=readout_K,
+            ffn_mult=config['tf_ffn_mult'],
+            activation=config['tf_activation'],
+            use_content=config.get('tf_content', True),
+            dtype=dtype,
+        )
+        return create_sequential_model(v3)
+
     # v2: full-transformer pipeline replaces the ENTIRE Combo stack (Block 1 CNN +
     # Wilson + Block 3 CNN) with transformers. Exact A_v symmetry is preserved at init
     # by the odd embedding + identity-init Block-1 blocks + channelwise Wilson fusion.

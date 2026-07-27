@@ -141,14 +141,17 @@ def main():
     with open(config['filename'], 'w') as f:
         json.dump(data, f)
     
-    # v2 correctness gate: exact A_v (vertex/gauge) symmetry at init must hold to machine
-    # precision (odd embedding + identity Block-1 sublayers + channelwise Wilson fusion).
-    if config.get('symmetric_block') == 'full_transformer':
+    # Correctness gate: exact A_v (vertex/gauge) symmetry must hold to machine precision.
+    # full_transformer: at init only (odd embedding + identity Block-1 + Wilson fusion).
+    # plaquette_transformer (Variant 3): at ANY parameters (B_p tokens are a change of
+    # variables), so the same check is a full architecture-correctness gate.
+    if config.get('symmetric_block') in ('full_transformer', 'plaquette_transformer'):
         dev = check_Av_invariance(model, vs.parameters, geometry)
         print(f"[A_v init-invariance] max |Delta log psi| = {dev:.2e}")
         assert dev < 1e-6, (
             f"A_v symmetry BROKEN at init (max dev {dev:.2e}) -- check odd embedding / "
-            f"zero-init Block-1 sublayers / channelwise Wilson fusion"
+            f"zero-init Block-1 sublayers / channelwise Wilson fusion (v2), or the "
+            f"B_p tokenization (Variant 3)"
         )
 
     # Setup callbacks for observables
@@ -204,8 +207,9 @@ def main():
     callback = create_Se_callback(geometry)
     callback(vs, -1, -1, config)
 
-    # Attention interpretability dump (gamma ranges + alpha tables) for full_transformer
-    if config.get('symmetric_block') == 'full_transformer':
+    # Attention interpretability dump: gamma ranges + alpha tables (full_transformer),
+    # or the per-(layer, head) content-gate alpha_h (plaquette_transformer / Variant 3).
+    if config.get('symmetric_block') in ('full_transformer', 'plaquette_transformer'):
         dump_attention(vs, config)
 
     # Log runtime

@@ -216,6 +216,36 @@ sum (that condenses e,m *independently*; the product proliferates the *bound* dy
 - **Status (2026-07-27):** code done + locally verified (`py_compile`; 18-pair + sign checks pass);
   NERSC down (~10-day outage) ⇒ training on Colab. Sweep not yet run.
 
+## Current work — Variant 3: pure plaquette transformer (branch `variant3-plaquette-transformer`)
+Standalone exactly-A_v-invariant ansatz (spec "Variant 3"): tokens are the CLASSICAL stabilizer
+values `t_p = B_p(s) = ∏₄ sᵢ ∈ {±1}` (change of variables ⇒ invariance by construction, no
+architectural constraint downstream), 2-entry lookup embedding (2d params, no positional
+encoding), then a **full input-dependent** transformer — unlike v1/v2's factored (content-free)
+attention. Attention per head: `A_ij = softmax_j(b_h(Δ_ij) + α_h·q·k/√d_head)` with `b_h` a
+T5-style learned relative-position bias over the same `(2L−3)²` OBC displacement table, and
+`α_h` a per-head content gate **init 0** (init = pure position attention; trained α_h per
+layer/head = the content-routing diagnostic, dumped to `*_attn.json` via `dump_attention`).
+- **Physics scope:** ONLY the pure-`h_x` cut (`h_z`/`h_y` anticommute with `A_v = XXXX`, so the
+  enforced symmetry would be wrong there — that needs the Variant-1 cleaning block, future work).
+  `h_x=0` is trivial (all tokens +1 ⇒ ψ constant); benchmark point is **`h_x=0.2, h_z=0`, L=4**
+  vs a new ED point `results/ed/ed_L4_hx0.20_hz0.00.json`. Sign-free ⇒ `float64`, real head.
+- **Code:** `model/plaquette_transformer.py` (`GatedMHA_OBC`/`EncoderBlockV3`/`PlaquetteTransformer`;
+  bias-free everywhere, pre-**RMSNorm** — no LayerNorm; GELU FFN; sum-pool → RMSNorm → Dense_K →
+  Σ log-cosh). Selector `--symmetric_block plaquette_transformer` (early branch in `create_model`,
+  no Block-1/Wilson/Final); `--tf_content` (BooleanOptionalAction, default on) — `--no-tf_content`
+  freezes `α_h≡0` (stop-gradient) ⇒ normalized-factored ablation arm. `--tf_activation` now also
+  accepts `tanh`. `main.py`'s `check_Av_invariance` gate + `dump_attention` extended to this arm
+  (for Variant 3 the A_v check must pass at ANY params, not just init — full correctness gate).
+- **Default arm:** `d=32, 4 layers, 4 heads, FFN 2d` ⇒ **34,560 params** (vs CNN 1,233!). Gotcha:
+  the hand-rolled DENSE P×P SR solve ⇒ ~9.5 GB QGT + O(P³) solve per step at P≈35k — expected to
+  fit/run on an A100 but unproven; fallback arm `v3s` (`d=16, 2 layers`, ~4.7k params) in the job.
+- **Job:** `jobs/nersc_v3.sh` (env-param like nersc_transformer.sh; arms `v3`/`v3f`(frozen-α)/`v3s`;
+  runs the missing L=4 h_x ED companion first). Local verify: `scratchpad/validate_v3.py`
+  (numpy-only: geometry, tokenization==B_p, exact A_v invariance of tokens, displacement decode,
+  param count 34,560, gated-attention properties) — ALL PASS + `py_compile` clean.
+- **Status (2026-07-27):** code complete + locally validated; NOT yet trained (NERSC outage —
+  either wait for the cluster or make a Colab driver like the fermionic one).
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

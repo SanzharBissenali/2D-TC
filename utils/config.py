@@ -105,8 +105,11 @@ def parse_arguments() -> Dict[str, Any]:
     # Symmetric-block (Block 3) selector + factored-attention transformer hyperparameters.
     # 'cnn' (default) = original global-kernel invariant CNN; 'transformer' = replace Block 3
     # with a factored-attention encoder stack (Block 1 + Wilson nonlinearity unchanged).
-    parser.add_argument('--symmetric_block', choices=['cnn', 'transformer', 'full_transformer'], default='cnn',
-                        help="Block-3 arch: 'cnn' | 'transformer' (v1) | 'full_transformer' (v2, whole pipeline)")
+    parser.add_argument('--symmetric_block',
+                        choices=['cnn', 'transformer', 'full_transformer', 'plaquette_transformer'],
+                        default='cnn',
+                        help="Block-3 arch: 'cnn' | 'transformer' (v1) | 'full_transformer' (v2, whole pipeline)"
+                             " | 'plaquette_transformer' (Variant 3: B_p tokens + gated full attention)")
     parser.add_argument('--tf_layers', type=int, default=2,
                         help='Transformer: number of encoder blocks (Block 2 in full_transformer)')
     parser.add_argument('--tf1_layers', type=int, default=1,
@@ -116,12 +119,15 @@ def parse_arguments() -> Dict[str, Any]:
     parser.add_argument('--tf_dmodel', type=int, default=8, help='Transformer: embedding dimension d')
     parser.add_argument('--tf_heads', type=int, default=2, help='Transformer: number of attention heads (must divide d)')
     parser.add_argument('--tf_ffn_mult', type=int, default=2, help='Transformer: FFN hidden = tf_ffn_mult * d')
-    parser.add_argument('--tf_activation', choices=['relu', 'gelu'], default='relu',
-                        help='Transformer: FFN activation')
+    parser.add_argument('--tf_activation', choices=['relu', 'gelu', 'tanh'], default='relu',
+                        help='Transformer: FFN activation (tanh supported by plaquette_transformer only)')
     parser.add_argument('--tf_readout_K', type=int, default=0,
                         help='Transformer: log-cosh readout hidden units K (0 => use d_model)')
     parser.add_argument('--tf_complex_output', action='store_true',
                         help='Transformer: complex (real+1j*imag) readout for sign-full runs')
+    parser.add_argument('--tf_content', action=argparse.BooleanOptionalAction, default=True,
+                        help='plaquette_transformer: trainable per-head content gate alpha_h '
+                             '(--no-tf_content freezes alpha_h=0 => normalized-factored ablation)')
     parser.add_argument('--seed', type=int, default=0,
                         help='PRNG seed for the variational state (deterministic paired runs)')
 
@@ -185,6 +191,7 @@ def parse_arguments() -> Dict[str, Any]:
             'tf_activation': 'relu',
             'tf_readout_K': 0,
             'tf_complex_output': False,
+            'tf_content': True,
             'seed': 0,
             'wandb': False,
             'wandb_project': '2d-tc',
@@ -312,6 +319,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "tf_activation": [config.get("tf_activation", "none")],
             "tf_readout_K": [config.get("tf_readout_K", 0)],
             "tf_complex_output": [config.get("tf_complex_output", False)],
+            "tf_content": [config.get("tf_content", True)],
             "seed": [config.get("seed", 0)],
             "rescale": [config["rescale"]],
             "kernel_size_noninv": [config["kernel_size"]],
