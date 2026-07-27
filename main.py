@@ -29,7 +29,8 @@ from simulation.optimizer import run_tdvp, create_final_callback
 from simulation.observables import (
     create_wilson_loop_callback, create_magnetization_callback,
     create_renyi_callback, create_2point_callback, create_conditional_callbacks,
-    create_plaquette_stabilizer_callback, check_Av_invariance, dump_attention
+    create_plaquette_stabilizer_callback, create_vertex_stabilizer_callback,
+    create_Se_callback, check_Av_invariance, dump_attention
 )
 from utils.config import setup_environment, parse_arguments, create_data_dict, save_data
 from utils.io import save_model, log_runtime, record_experiment_info
@@ -85,6 +86,8 @@ def main():
         Jy_v=config.get('Jy_v', 0.0),
         Jy_p=config.get('Jy_p', 0.0),
         Jbond=config.get('Jbond', 0.0),
+        h_f=config.get('h_f', 0.0),
+        fermion_pairs=geometry.fermion_pairs,
         dtype=config['dtype']
     )
     
@@ -170,26 +173,35 @@ def main():
     # Calculate observables
     print("Calculating final observables...")
     
-    # For Lx >= 6, calculate all observables at the end
+    # For Lx >= 6, calculate the Wilson-loop observables at the end (expensive)
     if geometry.Lx >= 6:
         # Calculate Wilson loops
         callback = create_wilson_loop_callback(geometry)
         callback(vs, -1, -1, config)
-        
-        # Calculate Renyi entropy
-        callback = create_renyi_callback(geometry)
-        callback(vs, -1, -1, config)
-        
+
         # # Calculate two-point correlation functions
         # callback = create_2point_callback(geometry) #doesn't work yet
         # callback(vs, -1, -1, config)
+
+    # Renyi-2 entropy at the end for ALL sizes (calculate_renyi_entropy now falls back to
+    # a single central placement at small L, so L=4 no longer crashes on an empty grid).
+    callback = create_renyi_callback(geometry)
+    callback(vs, -1, -1, config)
 
     # Always calculate magnetizations at the end
     callback = create_magnetization_callback(geometry)
     callback(vs, -1, -1, config)
 
-    # Final plaquette-stabilizer <B_p> (contamination diagnostic; ~1 on this cut)
+    # Final plaquette-stabilizer <B_p> (m-flux / contamination diagnostic)
     callback = create_plaquette_stabilizer_callback(geometry)
+    callback(vs, -1, -1, config)
+
+    # Final vertex-stabilizer <A_v> (e-charge diagnostic; complements <B_p>)
+    callback = create_vertex_stabilizer_callback(geometry)
+    callback(vs, -1, -1, config)
+
+    # Final fermionic (dyon) order parameter <S_e> = <X_a.Z_b>
+    callback = create_Se_callback(geometry)
     callback(vs, -1, -1, config)
 
     # Attention interpretability dump (gamma ranges + alpha tables) for full_transformer

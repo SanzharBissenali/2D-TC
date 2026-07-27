@@ -187,6 +187,35 @@ runs don't), plus `⟨σʸ⟩` added to `exact/lanczos_ed.py`.
   are internally consistent (monotonic in hy, ⟨B_p⟩≈0.93 in the ordered phase), so the `ComplexWarning`
   (discarded-imag in the Wilson-nonlinearity VJP, `networks.py:261`) is very likely benign.
 
+## Current work — fermionic (dyon) field transition (branch `fermionic-perturbation`, L=4 Colab)
+New perturbation `H = H_TC − h_f·Σ S_e`, `S_e = X_a·Z_b` = the L-shaped two-body operator
+(figure `fermionic-excitation-geo.png`). `Z` moves an `e` (vertex charge, anticommutes with
+`A_v=XXXX`), `X` moves an `m` (plaquette flux, anticommutes with `B_p=ZZZZ`); the **product binds
+e+m into the composite fermion ε and hops it** — physically distinct from an equal single-site `X+Z`
+sum (that condenses e,m *independently*; the product proliferates the *bound* dyon).
+- **Operator list (`geometry._generate_fermion_pairs`):** for each link `j`, partner = `j+[½,½]`
+  (same offset as `_generate_bonds`); rule is UNIFORM **Z on source `j`, X on partner**. Reproduces
+  both figure orientations (row family Z-horizontal/X-vertical + column family Z-vertical/X-horizontal),
+  keyed by the unique Z link ⇒ no double-count. **L=4 ⇒ 18 terms** (9+9; 6 dropped at the OBC boundary).
+- **Plumbing (mirrors `hz`/`Jbond`/`⟨B_p⟩`):** `--h_f` (config.py) → term in `hamiltonian.py` →
+  `⟨S_e⟩` (`Se_mean/std`) + `⟨A_v⟩` (`Av_mean/std`, XXXX, e-diagnostic to complement `⟨B_p⟩`) in
+  `observables.py`, all wired end-of-run in `main.py`. Also **fixed `calculate_renyi_entropy` at L=4**
+  (empty-`arange` fallback to a single central placement; was why Rényi was gated to `Lx≥6`).
+- **SIGN PROBLEM (key gotcha):** `X·Z` has no σʸ so **H is real, but it is NOT sign-free/stoquastic.**
+  Small-L ED (`scratchpad/sign_check.py`, numpy/scipy) shows the exact GS is **signful (~46% negative
+  amplitudes for any `h_f>0`)** — that sign structure *is* ε's fermionic statistics. The `float64`
+  Combo gives a strictly **positive** amplitude (`Final=mean`, real logψ) and **cannot represent it**.
+  ⇒ `config.py` now auto-sets **`dtype='complex'` when `h_f≠0`** (unless the complex-readout transformer
+  is used), i.e. the same complex-CNN path as the `hy` cut. The `h_f=0` anchor stays the cheap real CNN
+  (E≈−25.0, ⟨A_v⟩≈⟨B_p⟩≈1, ⟨S_e⟩≈0). Chosen arm: **complex CNN** (conservative baseline over the
+  faster complex-readout transformer).
+- **Run:** `colab/fermionic_transition_L4.ipynb` — subprocess-`main.py` driver, **one cell per
+  `h_f`∈{0,…,1.0}**, saves `.mpack`+observables to Drive (skip-if-complete), final collect/plot cell
+  (E, ⟨S_e⟩ + `d⟨S_e⟩/dh_f`, ⟨A_v⟩/⟨B_p⟩, Rényi-2). Complex JIT ~15–20 min/point at L4 ⇒ ~2–3 Colab
+  sessions. High-`h_f` may hit SR instability (as on `hy`) ⇒ re-run `run_hf(hf, diag_shift=1e-3)`.
+- **Status (2026-07-27):** code done + locally verified (`py_compile`; 18-pair + sign checks pass);
+  NERSC down (~10-day outage) ⇒ training on Colab. Sweep not yet run.
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

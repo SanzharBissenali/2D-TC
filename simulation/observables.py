@@ -294,19 +294,23 @@ def calculate_renyi_entropy(
     center = (geometry.Lx - 1) / 2
     shift = geometry.Lx / 2 - radius - 2
     renyi_mean = []
-    
-    if shift != 0:
-        arange = np.arange(center - shift, center + shift, 1.0)
-        with tqdm(total=len(arange) * len(arange), desc='ProgressBar') as pbar:
-            for x in arange:
-                for y in arange:
-                    renyi_entropy = renyi(vstate, geometry, radius, x, y)
-                    renyi_mean.append(renyi_entropy[0].mean)
-                    pbar.update(1)
-    else:
-        renyi_entropy = renyi(vstate, geometry, radius, center, center)
-        renyi_mean.append(renyi_entropy[0].mean)
-    
+
+    # Grid of subsystem-center placements to translation-average over. When the system
+    # is too small to slide the ball (shift <= 0, e.g. L=4 at radius 1 => shift=-1 and
+    # np.arange(2.5, 0.5, 1.0) is empty), fall back to a single central placement so the
+    # entropy is still measured instead of leaving renyi_entropy unbound (this is why the
+    # callback used to be gated to Lx>=6); mirrors the guard in calculate_wilson_loops.
+    placements = np.arange(center - shift, center + shift, 1.0) if shift != 0 else np.array([center])
+    if placements.size == 0:
+        placements = np.array([center])
+
+    with tqdm(total=len(placements) * len(placements), desc='ProgressBar') as pbar:
+        for x in placements:
+            for y in placements:
+                renyi_entropy = renyi(vstate, geometry, radius, x, y)
+                renyi_mean.append(renyi_entropy[0].mean)
+                pbar.update(1)
+
     return np.mean(renyi_mean), np.std(renyi_mean), renyi_entropy[1], 4 * radius
 
 
@@ -558,6 +562,90 @@ def create_plaquette_stabilizer_callback(geometry) -> Callable:
             json.dump(data, f)
 
     return plaquette_callback
+
+
+def calculate_Se(
+    vstate: nk.vqs.VariationalState,
+    geometry
+) -> Tuple[float, float]:
+    """Mean and std of the fermionic (dyon) term expectations <S_e> = <X_a . Z_b>.
+
+    S_e = X_a . Z_b is the L-shaped two-body operator that binds an e (Z) to an m (X)
+    into the composite fermion. In the pure toric ground state <X_a Z_b> = 0; as the
+    h_f field is turned on the state polarizes along S_e so <S_e> grows 0 -> finite,
+    and its susceptibility d<S_e>/dh_f peaks at the transition. Pairs come from
+    geometry.fermion_pairs ([x_link, z_link]).
+
+    Returns (Se_mean, Se_std) over all fermion pairs.
+    """
+    hi = vstate.hilbert
+    vals = []
+    for (a, b) in geometry.fermion_pairs:
+        op = nk.operator.spin.sigmax(hi, a) * nk.operator.spin.sigmaz(hi, b)
+        vals.append(vstate.expect(op).mean)
+    vals = np.array([float(np.real(v)) for v in vals])
+    return float(vals.mean()), float(vals.std())
+
+
+def create_Se_callback(geometry) -> Callable:
+    """Callback logging <S_e> mean/std (the fermionic X.Z order parameter). No internal
+    step guard so an explicit end-of-run call always runs."""
+    def se_callback(vstate: nk.vqs.VariationalState, step: int, time: float, config: Dict[str, Any]) -> None:
+        Se_mean, Se_std = calculate_Se(vstate, geometry)
+
+        with open(config['filename'], 'r') as f:
+            data = json.load(f)
+
+        data["order_params"]["Se_mean"].append(Se_mean)
+        data["order_params"]["Se_std"].append(Se_std)
+
+        with open(config['filename'], 'w') as f:
+            json.dump(data, f)
+
+    return se_callback
+
+
+def calculate_vertex_stabilizer(
+    vstate: nk.vqs.VariationalState,
+    geometry
+) -> Tuple[float, float]:
+    """Mean and std of the vertex/star-stabilizer expectations <A_v> = <XXXX>.
+
+    Complement to <B_p>: A_v = XXXX detects e (charge) excitations, B_p = ZZZZ detects
+    m (flux). The fermionic field creates both e and m, so BOTH <A_v> and <B_p> should
+    degrade from 1 across the transition (A_v tracks e-condensation, B_p tracks m).
+    A_v is an off-diagonal 4-body X string but cheap at L=4.
+
+    Returns (Av_mean, Av_std) over all vertex stars.
+    """
+    hi = vstate.hilbert
+    vals = []
+    for vert in geometry.vertex_all:
+        idx = [j for j in vert if j != -1]
+        op = 1
+        for j in idx:
+            op = op * nk.operator.spin.sigmax(hi, j)
+        vals.append(vstate.expect(op).mean)
+    vals = np.array([float(np.real(v)) for v in vals])
+    return float(vals.mean()), float(vals.std())
+
+
+def create_vertex_stabilizer_callback(geometry) -> Callable:
+    """Callback logging <A_v> mean/std. No internal step guard so an explicit
+    end-of-run call always runs."""
+    def vertex_callback(vstate: nk.vqs.VariationalState, step: int, time: float, config: Dict[str, Any]) -> None:
+        Av_mean, Av_std = calculate_vertex_stabilizer(vstate, geometry)
+
+        with open(config['filename'], 'r') as f:
+            data = json.load(f)
+
+        data["order_params"]["Av_mean"].append(Av_mean)
+        data["order_params"]["Av_std"].append(Av_std)
+
+        with open(config['filename'], 'w') as f:
+            json.dump(data, f)
+
+    return vertex_callback
 
 
 def check_Av_invariance(model, params, geometry, n_configs: int = 8) -> float:

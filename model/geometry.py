@@ -53,6 +53,10 @@ class ToricCodeGeometry:
         # Generate nearest-neighbor bonds
         self.bonds = self._generate_bonds()
         self.Nbonds = len(self.bonds)
+
+        # Generate fermionic (dyon) hopping pairs for the S_e = X_a.Z_b field
+        self.fermion_pairs = self._generate_fermion_pairs()
+        self.Nfermion = len(self.fermion_pairs)
         
         # Extract non-boundary vertex stabilizers
         self.vertex_bulk_hetero, self.vertex_edge_hetero = self._separate_vertex_stabilizers()
@@ -155,7 +159,36 @@ class ToricCodeGeometry:
                 bonds.append([j, nn_downright[0][0]])
                 
         return bonds
-    
+
+    def _generate_fermion_pairs(self) -> List[List[int]]:
+        """Fermionic (dyon) hopping pairs [x_link, z_link] for the S_e = X_a.Z_b field.
+
+        S_e binds an e (Z, moved between vertices) to an m (X, moved between plaquettes)
+        as the composite fermion epsilon; a term is a product on two perpendicular links
+        meeting at a shared vertex (the "L" in the figure). For every link j the partner
+        is the link at arr_coord[j] + [1/2, 1/2] (the same top-right offset used in
+        _generate_bonds), and the rule is UNIFORM: Z on the source link j, X on the
+        partner. This reproduces BOTH figure orientations (families):
+          - j horizontal (x+1/2, y): partner is the vertical link above its right
+            endpoint => Z on horizontal, X on vertical      (figure left panel).
+          - j vertical (x, y+1/2): partner is the horizontal link right-and-above its
+            top endpoint => Z on vertical, X on horizontal   (figure right panel).
+        Each term is keyed by its unique Z (source) link, so there is no double-counting.
+        Pairs whose partner falls off the OBC boundary (empty argwhere) are skipped.
+        Returns a list of [x_link, z_link] qubit-index pairs.
+        """
+        pairs = []
+        for j in range(0, self.N):
+            partner = self._mapping2Dto1D(
+                self.arr_coord, (self.arr_coord + np.array([1/2, 1/2]))[j]
+            )
+            if len(partner) == 0:
+                continue  # partner off the OBC boundary -> skip
+            p = partner[0][0]
+            x_link, z_link = p, j  # Z on source link j, X on the +[1/2,1/2] partner
+            pairs.append([x_link, z_link])
+        return pairs
+
     def _separate_vertex_stabilizers(self) -> Tuple[List[List[int]], List[List[int]]]:
         """Separate vertex stabilizers into bulk and edge operators."""
         vertex_bulk_hetero = []

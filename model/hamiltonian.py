@@ -19,6 +19,8 @@ def create_hamiltonian(
     Jy_v: float = 0.0,
     Jy_p: float = 0.0,
     Jbond: float = 0.0,
+    h_f: float = 0.0,
+    fermion_pairs: Optional[List[List[int]]] = None,
     dtype: Any = complex
 ) -> nk.operator.AbstractOperator:
     """
@@ -36,6 +38,8 @@ def create_hamiltonian(
         Jy_v: Y vertex coupling
         Jy_p: Y plaquette coupling
         Jbond: Bond coupling
+        h_f: Fermionic (dyon) X.Z field strength
+        fermion_pairs: List of [x_link, z_link] pairs for the S_e = X_a.Z_b field
         dtype: Data type for the Hamiltonian
         
     Returns:
@@ -104,7 +108,16 @@ def create_hamiltonian(
             H += -nk.operator.spin.sigmax(hi, x) * nk.operator.spin.sigmax(hi, y) * Jbond
             H += -nk.operator.spin.sigmaz(hi, x) * nk.operator.spin.sigmaz(hi, y) * Jbond
             H += -nk.operator.spin.sigmay(hi, x) * nk.operator.spin.sigmay(hi, y) * Jbond
-    
+
+    # Add fermionic (dyon) perturbation: sum of two-body S_e = X_a . Z_b on the
+    # L-shaped edge pairs. Binds an e (Z) to an m (X) so the field proliferates the
+    # composite fermion epsilon, NOT independent anyons (unlike an equal X+Z sum).
+    # X.Z carries no sigma^y, so this term is REAL and keeps the Hamiltonian float64.
+    if h_f != 0.0 and fermion_pairs is not None:
+        for (a, b) in fermion_pairs:
+            H += -h_f * nk.operator.spin.sigmax(hi, a, dtype=dtype) \
+                      * nk.operator.spin.sigmaz(hi, b, dtype=dtype)
+
     # Convert to Pauli strings for more efficient implementation
     H = H.to_pauli_strings()
     

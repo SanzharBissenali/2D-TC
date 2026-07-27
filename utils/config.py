@@ -80,6 +80,8 @@ def parse_arguments() -> Dict[str, Any]:
     parser.add_argument('--Jy_p', type=float, default=0.0, help='Y plaquette coupling')
     parser.add_argument('--Jy_v', type=float, default=0.0, help='Y vertex coupling')
     parser.add_argument('--Jbond', type=float, default=0.0, help='Bond coupling')
+    parser.add_argument('--h_f', type=float, default=0.0,
+                        help='Fermionic (dyon) X.Z field strength (real => keeps dtype float64)')
     
     # Optimization parameters
     parser.add_argument('--dt', type=float, required=True, help='Time step')
@@ -161,6 +163,7 @@ def parse_arguments() -> Dict[str, Any]:
             'Jy_p': 0.0,
             'Jy_v': 0.0,
             'Jbond': 0.0,
+            'h_f': 0.0,
             'n_samples': 2**13,
             'n_chains': 2**10,  # Will be overridden by device detection
             'n_discard': 2**3,
@@ -217,9 +220,16 @@ def parse_arguments() -> Dict[str, Any]:
     # which also arms the non-holomorphic qgt_mode='complex' branch (optimizer.py, gated on
     # tf_complex_output && dtype=='float64'). Without it, hy!=0 falls back to the legacy
     # whole-model-complex CNN path, unchanged.
+    # The fermionic (dyon) field h_f is REAL but NOT sign-problem-free: X_a.Z_b has
+    # sign-indefinite off-diagonals in the Z basis (verified by small-L ED -- the exact
+    # ground state has ~46% negative amplitudes for any h_f>0), which is exactly the
+    # fermionic statistics of epsilon = e x m. A float64 Combo produces a strictly
+    # POSITIVE amplitude (real log psi) and cannot represent it, so h_f!=0 must use a
+    # signful ansatz: either the complex CNN (dtype=complex, like the hy path) or the
+    # real-encoder + complex-readout transformer (--tf_complex_output, handled first).
     if args.get('tf_complex_output', False) and args.get('symmetric_block', 'cnn') in ('transformer', 'full_transformer'):
         args['dtype'] = "float64"
-    elif args['hy'] != 0.0 or args['Jy_p'] != 0.0 or args['Jy_v'] != 0.0:
+    elif args['hy'] != 0.0 or args['Jy_p'] != 0.0 or args['Jy_v'] != 0.0 or args.get('h_f', 0.0) != 0.0:
         args['dtype'] = "complex"
     else:
         args['dtype'] = "float64"
@@ -272,7 +282,11 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "WilsonBFFM": [],
             "renyi2_entropy": [],
             "Bp_mean": [],
-            "Bp_std": []
+            "Bp_std": [],
+            "Av_mean": [],
+            "Av_std": [],
+            "Se_mean": [],
+            "Se_std": []
         },
         "sim_params": {
             "kind": ["G-NonInv"],
@@ -284,6 +298,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "Jy_p": [config["Jy_p"]],
             "Jy_v": [config["Jy_v"]],
             "Jbond": [config["Jbond"]],
+            "h_f": [config.get("h_f", 0.0)],
             "BC": [config["bc"]],
             "n_chann_inv": config["channels_inv"],
             "n_chann_noninv": config["channels_noninv"],
