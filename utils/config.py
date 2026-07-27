@@ -91,6 +91,14 @@ def parse_arguments() -> Dict[str, Any]:
                         help='dt (learning-rate) schedule: const, or cosine-decay to lr_final_frac*dt')
     parser.add_argument('--lr_final_frac', type=float, default=0.1,
                         help='cosine schedule: final dt as a fraction of the initial dt (default 0.1)')
+    parser.add_argument('--optimizer', choices=['tdvp', 'minsr'], default='tdvp',
+                        help="'tdvp' = hand-rolled dense P x P QGT SR (baseline); 'minsr' = "
+                             "NetKet VMC_SR(use_ntk=True), N_samples x N_samples kernel solve "
+                             "(for many-parameter ansaetze like the Variant-3 transformer)")
+    parser.add_argument('--lr', type=float, default=0.0,
+                        help='minsr learning rate (0 => reuse --dt)')
+    parser.add_argument('--n_steps', type=int, default=0,
+                        help='number of training steps (0 => sim_time/dt); overrides sim_time')
     
     # Neural network parameters
     parser.add_argument('--architecture', type=str, choices=['Combo', 'RPP'], default='Combo', 
@@ -178,6 +186,9 @@ def parse_arguments() -> Dict[str, Any]:
             'sim_time': 3.5,
             'lr_schedule': 'const',
             'lr_final_frac': 0.1,
+            'optimizer': 'tdvp',
+            'lr': 0.0,
+            'n_steps': 0,
             'rescale': 1.0,
             'annotation': "cluster_16x16_run_hy",
             # Symmetric-block / transformer defaults (legacy positional path)
@@ -219,6 +230,11 @@ def parse_arguments() -> Dict[str, Any]:
     
     # Calculate kernel_size_inv based on Lx
     args['kernel_size_inv'] = args['Lx'] - 1
+
+    # --n_steps overrides sim_time (kept coupled so BOTH optimizer paths and the JSON
+    # sim_params agree: n_iter is always derived as sim_time/dt).
+    if args.get('n_steps', 0):
+        args['sim_time'] = args['n_steps'] * args['dt']
     
     # Determine dtype based on parameters.
     # v3 (Viteritti et al., arXiv:2311.16889): with a transformer complex readout the DEEP
@@ -320,6 +336,8 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "tf_readout_K": [config.get("tf_readout_K", 0)],
             "tf_complex_output": [config.get("tf_complex_output", False)],
             "tf_content": [config.get("tf_content", True)],
+            "optimizer": [config.get("optimizer", "tdvp")],
+            "lr": [config.get("lr", 0.0)],
             "seed": [config.get("seed", 0)],
             "rescale": [config["rescale"]],
             "kernel_size_noninv": [config["kernel_size"]],

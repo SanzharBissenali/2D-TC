@@ -25,7 +25,7 @@ from netket.utils import struct
 from model.geometry import ToricCodeGeometry
 from model.hamiltonian import create_hamiltonian
 from model.networks import KernelManager, create_model
-from simulation.optimizer import run_tdvp, create_final_callback
+from simulation.optimizer import run_tdvp, run_minsr, create_final_callback
 from simulation.observables import (
     create_wilson_loop_callback, create_magnetization_callback,
     create_renyi_callback, create_2point_callback, create_conditional_callbacks,
@@ -162,8 +162,11 @@ def main():
     print(f"Number of model parameters: {vs.n_parameters}")
     print(f"Starting optimization...")
     
-    # Run the optimization
-    vs = run_tdvp(
+    # Run the optimization ('minsr' = NetKet VMC_SR kernel-trick, N_samples-bound;
+    # 'tdvp' = the hand-rolled dense P x P QGT baseline)
+    run_optimizer = run_minsr if config.get('optimizer', 'tdvp') == 'minsr' else run_tdvp
+    print(f"Optimizer: {config.get('optimizer', 'tdvp')}")
+    vs = run_optimizer(
         hamiltonian=H,
         vstate=vs,
         config=config,

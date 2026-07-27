@@ -236,15 +236,30 @@ layer/head = the content-routing diagnostic, dumped to `*_attn.json` via `dump_a
   freezes `α_h≡0` (stop-gradient) ⇒ normalized-factored ablation arm. `--tf_activation` now also
   accepts `tanh`. `main.py`'s `check_Av_invariance` gate + `dump_attention` extended to this arm
   (for Variant 3 the A_v check must pass at ANY params, not just init — full correctness gate).
-- **Default arm:** `d=32, 4 layers, 4 heads, FFN 2d` ⇒ **34,560 params** (vs CNN 1,233!). Gotcha:
-  the hand-rolled DENSE P×P SR solve ⇒ ~9.5 GB QGT + O(P³) solve per step at P≈35k — expected to
-  fit/run on an A100 but unproven; fallback arm `v3s` (`d=16, 2 layers`, ~4.7k params) in the job.
-- **Job:** `jobs/nersc_v3.sh` (env-param like nersc_transformer.sh; arms `v3`/`v3f`(frozen-α)/`v3s`;
-  runs the missing L=4 h_x ED companion first). Local verify: `scratchpad/validate_v3.py`
+- **Default arm:** `d=32, 4 layers, 4 heads, FFN 2d` ⇒ **34,560 params** (vs CNN 1,233!). The
+  hand-rolled DENSE P×P SR solve would need ~9.5 GB QGT + O(P³)/step at P≈35k ⇒ **minSR added**:
+  `--optimizer minsr` → `simulation/optimizer.run_minsr` = NetKet `VMC_SR(use_ntk=True)` (kernel
+  trick, `N_samples×N_samples` solve — bottleneck is the sample budget, not P). Same per-step
+  JSON/tqdm/W&B logging as `run_tdvp` (t_sample/t_grad/t_sr not separable inside the driver ⇒ 0;
+  `step_time` carries the total); logs the v3 content gates `alpha/<block>_h<i>` to W&B every 8
+  steps. New knobs: `--lr` (minsr lr; 0 ⇒ reuse `--dt`), `--n_steps` (0 ⇒ `sim_time/dt`; overrides
+  `sim_time` for BOTH optimizer paths, coupled in config-finalize). Default `tdvp` byte-identical.
+- **Job:** `jobs/nersc_v3.sh` (env-param like nersc_transformer.sh; arms `v3`/`v3f`(frozen-α)/`v3s`
+  (d=16 2-layer fallback); runs the missing L=4 h_x ED companion first — note it predates the minSR
+  flags, add `--optimizer minsr` when NERSC is back). Local verify: `scratchpad/validate_v3.py`
   (numpy-only: geometry, tokenization==B_p, exact A_v invariance of tokens, displacement decode,
   param count 34,560, gated-attention properties) — ALL PASS + `py_compile` clean.
-- **Status (2026-07-27):** code complete + locally validated; NOT yet trained (NERSC outage —
-  either wait for the cluster or make a Colab driver like the fermionic one).
+- **Colab driver:** `colab/variant3_L4.ipynb` (NERSC outage workaround, fermionic-notebook pattern):
+  dedicated Drive clone of this branch, ONE hyperparameter cell (`HP` dict: steps/lr/diag_shift/
+  layers/dmodel/heads/act/tag…), `run_v3(arm, content=, force=, **HP-overrides)` streams the live
+  per-step `E ± err | Vscore | s/step` (JSON also appended every step ⇒ tail-able elsewhere),
+  arms `v3`+`v3f`, optional ED cell (~10 GB RAM ⇒ high-RAM runtime), collect cell (learning curves,
+  rel-err vs ED, trained α_h per layer/head). **W&B ONLINE** into project **`2d-tc-transformer`**
+  (group `variant3-L4`; Colab has internet — `WANDB_MODE=online` before `wandb_logger`'s
+  offline-setdefault). Completion marker = `.mpack` + `*_attn.json` (attn dump is written last).
+- **Status (2026-07-27):** code + minSR + notebook complete, locally validated (`py_compile`, cell
+  ASTs, validate_v3); NOT yet trained. First run: open the notebook, expect the A_v gate to print
+  exactly 0; if minSR diverges, raise diag_shift→1e-3 / halve lr (the hy-run fix).
 
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via

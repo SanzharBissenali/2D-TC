@@ -17,7 +17,7 @@ from utils import wandb_logger
 
 
 # --- instability instrumentation (arm-agnostic; used by both CNN and transformer arms) ---
-_WRAP = ("Sequential", "FullTransformer", "TransformerSymmetric")
+_WRAP = ("Sequential", "FullTransformer", "TransformerSymmetric", "PlaquetteTransformer")
 
 
 def _key_str(k):
@@ -252,6 +252,138 @@ def run_tdvp(
         # Update time (advance by the scheduled step)
         t = t + dt_step
     
+    return vstate
+
+
+def _alphas(params):
+    """Small 'alpha' leaves (the v3 per-head content gates, shape (h,)) per block.
+    Skips the v1 factored-attention alpha TABLES (h, n_disp) by the size cutoff."""
+    out = {}
+    for path, leaf in jax.tree_util.tree_leaves_with_path(params):
+        if _key_str(path[-1]) == "alpha" and np.size(leaf) <= 16:
+            out[_block_of(path)] = [round(float(v), 6) for v in np.ravel(np.asarray(leaf))]
+    return out
+
+
+def run_minsr(
+    hamiltonian: nk.operator.AbstractOperator,
+    vstate: nk.vqs.VariationalState,
+    config: Dict[str, Any],
+    callbacks: Optional[List[Callable]] = None
+) -> nk.vqs.VariationalState:
+    """SR training via NetKet's VMC_SR with the kernel trick (minSR / SRt).
+
+    Same update direction as the hand-rolled dense-QGT TDVP loop when
+    n_samples < n_params, but solves the (n_samples x n_samples) NTK system
+    instead of the (P x P) QGT one, so cost/memory scale with the SAMPLE budget,
+    not the parameter count -- the point of ``--optimizer minsr`` for the ~35k-param
+    Variant-3 transformer. Logging (per-step JSON append, tqdm, W&B, callback
+    cadence) mirrors ``run_tdvp``; the t_sample/t_grad/t_sr split is not separable
+    inside the driver, so those fields are 0 and ``step_time`` carries the total.
+    """
+    import optax
+    try:
+        from netket.driver import VMC_SR                     # netket >= 3.16 stable
+    except ImportError:
+        from netket.experimental.driver import VMC_SR        # pre-promotion location
+
+    dt = config['dt']
+    lr = config.get('lr', 0.0) or dt                         # 0 => reuse dt as the lr
+    n_iter = int(config.get('n_steps', 0) or round(config['sim_time'] / dt))
+    diag_shift = config['diag_shift']
+    filename = config['filename']
+    K_diag = 8
+
+    # lr schedule mirrors run_tdvp: const, or cosine decay to lr_final_frac * lr.
+    if config.get('lr_schedule', 'const') == 'cosine':
+        schedule = optax.cosine_decay_schedule(
+            init_value=lr, decay_steps=max(n_iter - 1, 1),
+            alpha=config.get('lr_final_frac', 0.1))
+    else:
+        schedule = lr
+
+    driver = VMC_SR(
+        hamiltonian, optax.sgd(schedule),
+        variational_state=vstate,
+        diag_shift=diag_shift,
+        use_ntk=True,                                        # kernel trick: N_s x N_s solve
+    )
+
+    loop = tqdm(range(n_iter))
+    t = 0.0
+    for step in loop:
+        step_start = time.time()
+        lr_step = float(schedule(step)) if callable(schedule) else lr
+
+        p_before = vstate.parameters
+        driver.advance(1)
+        stats = driver._loss_stats
+        E = jax.block_until_ready(stats)
+        step_time = time.time() - step_start
+
+        # ||dtheta|| recovered from the applied update (theta' = theta - lr * dtheta)
+        delta = jax.tree.map(lambda a, b: a - b, vstate.parameters, p_before)
+        dtheta_norm = _tree_norm(delta) / max(lr_step, 1e-300)
+
+        update_data(filename, [
+            "iters", "energy", "energy_eom", "energy_var", "tau_corr",
+            "Rsplit", "Vscore", "MCMC_accepted", "MCMC_total",
+            "t_sample", "t_grad", "t_sr", "grad_norm", "dtheta_norm", "dt_step"
+        ], [
+            t, E.mean, E.error_of_mean, E.variance, E.tau_corr,
+            E.R_hat, config['N'] * E.variance / E.mean**2,
+            vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps,
+            0.0, 0.0, 0.0, 0.0, dtheta_norm, lr_step
+        ])
+
+        if jnp.isnan(E.mean):
+            print("Encountered NaN energy, stopping optimization.")
+            break
+
+        wb_extra = {}
+        if step % K_diag == 0:
+            try:
+                _diag = {"step": step, "alphas": _alphas(vstate.parameters)}
+                for blk, vals in _diag["alphas"].items():
+                    for i, v in enumerate(vals):
+                        wb_extra[f"alpha/{blk}_h{i}"] = v
+                with open(filename, 'r') as _fh:
+                    _d = json.load(_fh)
+                _d["diagnostics"].append(_diag)
+                with open(filename, 'w') as _fh:
+                    json.dump(_d, _fh)
+            except Exception as _e:  # diagnostics must never interrupt training
+                print(f"[diag] skipped at step {step}: {_e}")
+
+        if callbacks is not None and step % 8 == 0:
+            for callback in callbacks:
+                callback(vstate, step, t, config)
+
+        vscore = float(jnp.real(config['N'] * E.variance / E.mean**2))
+        loop.set_description(
+            f"E: {E.mean:.6f} ± {E.error_of_mean:.6f} | Vscore: {vscore:.3e} | {step_time:.2f}s/step"
+        )
+
+        n_acc = float(vstate.sampler_state.n_accepted)
+        n_tot = float(vstate.sampler_state.n_steps)
+        wandb_logger.log_step(step, {
+            "energy": float(jnp.real(E.mean)),
+            "energy_err": float(E.error_of_mean),
+            "energy_std": float(jnp.sqrt(jnp.abs(E.variance))),
+            "energy_var": float(jnp.real(E.variance)),
+            "Vscore": vscore,
+            "tau_corr": float(E.tau_corr),
+            "Rsplit": float(E.R_hat),
+            "dtheta_norm": dtheta_norm,
+            "dt_step": lr_step,
+            "step_time": step_time,
+            "mcmc_accept_frac": n_acc / max(n_tot, 1.0),
+            "sim_t": t,
+            **wb_extra,
+        })
+
+        t += lr_step
+
     return vstate
 
 
