@@ -300,7 +300,17 @@ breaks it by the learned χ dressing — that's how `h_z` (anticommutes with A_v
   h_z≠0, χ is where content routing should first switch on (syndrome-matching claim).
 - **Local verify:** `scratchpad/validate_v1gc.py` (numpy-only: init factorization t=B_p×const per
   channel, exact A_v invariance over all 16 stars, edge-table `n_disp=16L²−32L+14=142`, param
-  count 9,966) — ALL PASS + `py_compile` clean. Not yet trained.
+  count 9,966) — ALL PASS + `py_compile` clean.
+- **First result (2026-07-28): cold-start v1 at (0.2,0.2) is BAD — V-score ~1e-2** (vs Variant 3's
+  1e-5 at the symmetric point); suspicion: χ and Ω scramble each other early, and/or the tanh-
+  product Wilson adapter. **Curriculum rescue implemented** (the spec's quasi-adiabatic loop):
+  `--freeze_chi` (stop-gradient ⇒ χ pinned at identity, zero SR update, param tree unchanged) +
+  `--init_params <mpack>` (warm start; A_v gate becomes print-only — a trained χ legitimately
+  breaks A_v). Notebook curriculum cell: `v1cA` = 250 steps at (0.2,0) χ-frozen (≡ Variant 3
+  through the V1 parameterization) → `v1cB` = 250 steps at (0.2,0.2) warm-started. Compare v1cB
+  vs cold v1 vs cnn in W&B. ED at (0.2,0.2) on Colab: use `--no-observables` + High-RAM (a 53 GB
+  runtime got OOM-killed WITH observables — netket Pauli→sparse intermediates + the 48-op
+  observable pass stack up; energies-only fits).
 
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
