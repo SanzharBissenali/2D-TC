@@ -28,6 +28,7 @@ edge table (`spatial_attention_block.edge_displacement_table`), Omega the plaque
 (`transformer_block.plaquette_displacement_table`).
 """
 
+import jax
 import jax.numpy as jnp
 import flax.linen as nn
 from typing import Any
@@ -60,6 +61,10 @@ class GaugeComboTransformer(nn.Module):
     activation: str = "gelu"
     use_content: bool = True
     remat: bool = False
+    chi_frozen: bool = False   # curriculum phase A: stop-gradient the whole chi output,
+                               # so SR leaves chi (incl. embed_w) at init == identity and
+                               # ONLY Omega trains; param tree is unchanged => the .mpack
+                               # warm-starts a chi_frozen=False phase-B run directly
     dtype: Any = jnp.float64
 
     @nn.compact
@@ -77,6 +82,12 @@ class GaugeComboTransformer(nn.Module):
                          use_content=self.use_content,
                          zero_init_out=True,                          # identity at init
                          dtype=self.dtype, name=f"chi{l}")(x)
+
+        if self.chi_frozen:
+            # zero jacobian for every chi param => SR update is exactly 0 for them
+            # (jacobian columns vanish; diag_shift regularizes the S block), so chi
+            # stays at its identity init while Omega trains.
+            x = jax.lax.stop_gradient(x)
 
         # --- fixed Wilson step: odd bound + channel-wise 4-product (nothing learned) ---
         t = jnp.prod(jnp.tanh(x)[jnp.asarray(self.plaq_all)], axis=1)  # (n_plaq, C)

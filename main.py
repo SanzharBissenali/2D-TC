@@ -134,25 +134,37 @@ def main():
         seed=config['seed']
     )
     
+    # Warm start (curriculum phase B): restore a previous run's serialized MCState.
+    # Requires an IDENTICAL model/sampler structure (e.g. phase A with --freeze_chi:
+    # stop_gradient changes no param shapes, so its .mpack loads directly).
+    if config.get('init_params'):
+        import flax as _flax
+        with open(config['init_params'], 'rb') as f:
+            vs = _flax.serialization.from_bytes(vs, f.read())
+        print(f"Warm-started from {config['init_params']}")
+
     # Update number of parameters in the data dictionary
     with open(config['filename'], 'r') as f:
         data = json.load(f)
     data["sim_params"]["n_params"] = [vs.n_parameters]
     with open(config['filename'], 'w') as f:
         json.dump(data, f)
-    
+
     # Correctness gate: exact A_v (vertex/gauge) symmetry must hold to machine precision.
     # full_transformer: at init only (odd embedding + identity Block-1 + Wilson fusion).
     # plaquette_transformer (Variant 3): at ANY parameters (B_p tokens are a change of
     # variables), so the same check is a full architecture-correctness gate.
+    # Warm-started runs: informational only -- a trained chi is LEGITIMATELY not identity
+    # (its A_v deviation is the learned dressing), so we print the number without asserting.
     if config.get('symmetric_block') in ('full_transformer', 'plaquette_transformer', 'variant1'):
         dev = check_Av_invariance(model, vs.parameters, geometry)
         print(f"[A_v init-invariance] max |Delta log psi| = {dev:.2e}")
-        assert dev < 1e-6, (
-            f"A_v symmetry BROKEN at init (max dev {dev:.2e}) -- check odd embedding / "
-            f"zero-init chi sublayers / channelwise Wilson product (v2/variant1), or the "
-            f"B_p tokenization (Variant 3)"
-        )
+        if not config.get('init_params'):
+            assert dev < 1e-6, (
+                f"A_v symmetry BROKEN at init (max dev {dev:.2e}) -- check odd embedding / "
+                f"zero-init chi sublayers / channelwise Wilson product (v2/variant1), or the "
+                f"B_p tokenization (Variant 3)"
+            )
 
     # Setup callbacks for observables
     callbacks = create_conditional_callbacks(geometry)

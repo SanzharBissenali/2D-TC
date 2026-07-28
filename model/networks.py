@@ -691,6 +691,7 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
             activation=config['tf_activation'],
             use_content=config.get('tf_content', True),
             remat=config.get('tf_remat', False),
+            chi_frozen=config.get('freeze_chi', False),
             dtype=dtype,
         )
         return create_sequential_model(v1)

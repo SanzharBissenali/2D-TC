@@ -142,6 +142,12 @@ def parse_arguments() -> Dict[str, Any]:
     parser.add_argument('--tf_content', action=argparse.BooleanOptionalAction, default=True,
                         help='plaquette_transformer: trainable per-head content gate alpha_h '
                              '(--no-tf_content freezes alpha_h=0 => normalized-factored ablation)')
+    parser.add_argument('--freeze_chi', action='store_true',
+                        help='variant1: freeze the chi (cleaning) block at its identity init '
+                             '(stop-gradient) -- curriculum phase A trains only Omega')
+    parser.add_argument('--init_params', type=str, default='',
+                        help='warm-start: path to a .mpack from a previous run with the SAME '
+                             'model/sampler structure (curriculum phase B)')
     parser.add_argument('--tf_remat', action='store_true',
                         help='plaquette_transformer: gradient-checkpoint (jax.remat) each encoder '
                              'block -- recompute activations in the backward pass instead of '
@@ -216,6 +222,8 @@ def parse_arguments() -> Dict[str, Any]:
             'tf_complex_output': False,
             'tf_content': True,
             'tf_remat': False,
+            'freeze_chi': False,
+            'init_params': '',
             'seed': 0,
             'wandb': False,
             'wandb_project': '2d-tc',
@@ -352,6 +360,8 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "tf_complex_output": [config.get("tf_complex_output", False)],
             "tf_content": [config.get("tf_content", True)],
             "tf_remat": [config.get("tf_remat", False)],
+            "freeze_chi": [config.get("freeze_chi", False)],
+            "init_params": [config.get("init_params", "")],
             "optimizer": [config.get("optimizer", "tdvp")],
             "lr": [config.get("lr", 0.0)],
             "seed": [config.get("seed", 0)],
