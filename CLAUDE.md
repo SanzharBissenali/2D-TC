@@ -259,9 +259,17 @@ layer/head = the content-routing diagnostic, dumped to `*_attn.json` via `dump_a
   rel-err vs ED, trained α_h per layer/head). **W&B ONLINE** into project **`2d-tc-transformer`**
   (group `variant3-L4`; Colab has internet — `WANDB_MODE=online` before `wandb_logger`'s
   offline-setdefault). Completion marker = `.mpack` + `*_attn.json` (attn dump is written last).
+- **Gotcha — Colab GPU OOM was the NOTEBOOK KERNEL, not the model.** Importing jax in a driver
+  notebook preallocates **75% of the GPU** at backend init, so the training SUBPROCESS got only
+  ~5 GB of an L4's 22 GB (d=32 OOM'd; d=16 "barely fit"). Fix (in the notebook): set
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false` BEFORE `import jax` in any cell that imports it, and give
+  the subprocess `XLA_PYTHON_CLIENT_MEM_FRACTION=0.90`. Extra memory knobs: HP `CHUNK_SIZE`
+  (netket chunking; `--chunk_size` → `MCState`, honored by `VMC_SRt`'s jacobian) and `--tf_remat`
+  (`nn.remat` per encoder block — recompute activations in backward; for big d/L).
 - **Status (2026-07-27):** code + minSR + notebook complete, locally validated (`py_compile`, cell
-  ASTs, validate_v3); NOT yet trained. First run: open the notebook, expect the A_v gate to print
-  exactly 0; if minSR diverges, raise diag_shift→1e-3 / halve lr (the hy-run fix).
+  ASTs, validate_v3); first Colab runs in progress (L4 GPU, W&B project `2d-tc-transformer`).
+  Expect the A_v gate to print exactly 0; if minSR diverges, raise diag_shift→1e-3 / halve lr
+  (the hy-run fix).
 
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
