@@ -266,10 +266,17 @@ layer/head = the content-routing diagnostic, dumped to `*_attn.json` via `dump_a
   the subprocess `XLA_PYTHON_CLIENT_MEM_FRACTION=0.90`. Extra memory knobs: HP `CHUNK_SIZE`
   (netket chunking; `--chunk_size` → `MCState`, honored by `VMC_SRt`'s jacobian) and `--tf_remat`
   (`nn.remat` per encoder block — recompute activations in backward; for big d/L).
-- **Status (2026-07-27):** code + minSR + notebook complete, locally validated (`py_compile`, cell
-  ASTs, validate_v3); first Colab runs in progress (L4 GPU, W&B project `2d-tc-transformer`).
-  Expect the A_v gate to print exactly 0; if minSR diverges, raise diag_shift→1e-3 / halve lr
-  (the hy-run fix).
+- **Sweep results (2026-07-28, overnight Colab, L=4 hx=0.2, 350 steps, minSR):** best arm =
+  **d=16, 4 layers, 4 heads (d_head 4), GELU, lr 0.01, ds 1e-4** → V-score ~1e-5. d=32: slower
+  convergence, similar final E/V-score (more SR directions from the same 8192 samples, no needed
+  expressivity — 9 tokens, 2-word vocab). **nl=8 degrades badly** (optimization: 9 tokens mix in
+  1–2 global layers; depth may pay only at larger L / near criticality). Factored (frozen-α) ≈
+  full at d32/nl4 but much worse at nl8 ⇒ the gate helps optimization, not (yet) routing. lr
+  0.0033 = just 3× slower. **Default arm is now d16** (notebook HP updated); escalation knob:
+  d_model×2. TODO: rel-err vs ED (run the ED cell — kill criterion is ED-based, not V-score),
+  seed replication of the top configs, cosine-schedule run (~500–700 steps) to chase the CNN's
+  1e-6–1e-7 V-score, and check the trained α_h gates (≈0 ⇒ no content routing at the symmetric
+  point, as theory predicts).
 
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
