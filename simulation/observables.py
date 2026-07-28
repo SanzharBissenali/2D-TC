@@ -356,16 +356,21 @@ def renyi(
 def calculate_magnetizations(
     vstate: nk.vqs.VariationalState,
     geometry,
-    radius: float = 1.0
+    radius: float = 1.0,
+    dual: bool = False
 ) -> Tuple[List[float], List[float], List[float], List[float], List[float], List[float]]:
     """
-    Calculate magnetizations in x, y, and z directions.
-    
+    Calculate PHYSICAL magnetizations in x, y, and z directions.
+
     Args:
         vstate: Variational state
         geometry: Geometry object
         radius: Radius of the region to consider
-        
+        dual: Dual (Hadamard-conjugated) simulation basis -- physical sigma_x
+            appears as sigma_z (and vice versa), and sigma_y -> -sigma_y, so the
+            constructors are swapped and the Y mean is negated to keep the
+            returned values physically meaningful.
+
     Returns:
         Tuple containing:
             - magnetizationsXmean: Mean magnetization in x direction
@@ -388,15 +393,19 @@ def calculate_magnetizations(
     
     hi = vstate.hilbert
     
+    _sx = nk.operator.spin.sigmaz if dual else nk.operator.spin.sigmax
+    _sz = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
+    _y_sign = -1.0 if dual else 1.0
+
     loop = tqdm(sel_q)
     for j in loop:
-        magnetizationX = vstate.expect(nk.operator.spin.sigmax(hi, j))
+        magnetizationX = vstate.expect(_sx(hi, j))
         magnetizationY = vstate.expect(nk.operator.spin.sigmay(hi, j))
-        magnetizationZ = vstate.expect(nk.operator.spin.sigmaz(hi, j))
-        
+        magnetizationZ = vstate.expect(_sz(hi, j))
+
         magnetizationsXmean.append(magnetizationX.mean)
         magnetizationsXstd.append(np.sqrt(magnetizationX.error_of_mean))
-        magnetizationsYmean.append(magnetizationY.mean)
+        magnetizationsYmean.append(_y_sign * magnetizationY.mean)
         magnetizationsYstd.append(np.sqrt(magnetizationY.error_of_mean))
         magnetizationsZmean.append(magnetizationZ.mean)
         magnetizationsZstd.append(np.sqrt(magnetizationZ.error_of_mean))
@@ -523,24 +532,28 @@ def z_connected_2point_correlator(
 
 def calculate_plaquette_stabilizer(
     vstate: nk.vqs.VariationalState,
-    geometry
+    geometry,
+    dual: bool = False
 ) -> Tuple[float, float]:
-    """Mean and std of the plaquette-stabilizer expectations <B_p> = <ZZZZ>.
+    """Mean and std of the PHYSICAL plaquette-stabilizer expectations <B_p>.
 
     On the sign-free (hz-only) cut every plaquette operator commutes with H, so
     the ground state has <B_p> = 1 exactly; a deviation from 1 diagnoses that the
-    ansatz has leaked out of the B_p = +1 sector (a contaminated state). The
-    operators are diagonal 4-body Z strings, so this is cheap.
+    ansatz has leaked out of the B_p = +1 sector (a contaminated state). In the
+    primal basis B_p = ZZZZ (diagonal, cheap); in the dual (Hadamard-conjugated)
+    simulation basis the SAME physical operator is the X-product, so `dual=True`
+    swaps the constructor and the JSON key keeps its physical meaning.
 
     Returns (Bp_mean, Bp_std) over all plaquettes.
     """
     hi = vstate.hilbert
+    _s = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
     vals = []
     for plaq in geometry.plaq_all:
         idx = [j for j in plaq if j != -1]
         op = 1
         for j in idx:
-            op = op * nk.operator.spin.sigmaz(hi, j)
+            op = op * _s(hi, j)
         vals.append(vstate.expect(op).mean)
     vals = np.array([float(np.real(v)) for v in vals])
     return float(vals.mean()), float(vals.std())
@@ -550,7 +563,8 @@ def create_plaquette_stabilizer_callback(geometry) -> Callable:
     """Callback logging <B_p> mean/std. Fired by the optimizer every 8 steps (and
     optionally at the end); no internal step guard so an explicit final call runs."""
     def plaquette_callback(vstate: nk.vqs.VariationalState, step: int, time: float, config: Dict[str, Any]) -> None:
-        Bp_mean, Bp_std = calculate_plaquette_stabilizer(vstate, geometry)
+        Bp_mean, Bp_std = calculate_plaquette_stabilizer(
+            vstate, geometry, dual=bool(config.get('dual_basis', False)))
 
         with open(config['filename'], 'r') as f:
             data = json.load(f)
@@ -566,7 +580,8 @@ def create_plaquette_stabilizer_callback(geometry) -> Callable:
 
 def calculate_Se(
     vstate: nk.vqs.VariationalState,
-    geometry
+    geometry,
+    dual: bool = False
 ) -> Tuple[float, float]:
     """Mean and std of the fermionic (dyon) term expectations <S_e> = <X_a . Z_b>.
 
@@ -579,9 +594,15 @@ def calculate_Se(
     Returns (Se_mean, Se_std) over all fermion pairs.
     """
     hi = vstate.hilbert
+    # dual (Hadamard-conjugated) simulation basis: physical X_a.Z_b appears as Z_a.X_b.
+    # h_f itself is asserted 0 in dual runs, so this stays a pure diagnostic there.
+    if dual:
+        _sa, _sb = nk.operator.spin.sigmaz, nk.operator.spin.sigmax
+    else:
+        _sa, _sb = nk.operator.spin.sigmax, nk.operator.spin.sigmaz
     vals = []
     for (a, b) in geometry.fermion_pairs:
-        op = nk.operator.spin.sigmax(hi, a) * nk.operator.spin.sigmaz(hi, b)
+        op = _sa(hi, a) * _sb(hi, b)
         vals.append(vstate.expect(op).mean)
     vals = np.array([float(np.real(v)) for v in vals])
     return float(vals.mean()), float(vals.std())
@@ -591,7 +612,8 @@ def create_Se_callback(geometry) -> Callable:
     """Callback logging <S_e> mean/std (the fermionic X.Z order parameter). No internal
     step guard so an explicit end-of-run call always runs."""
     def se_callback(vstate: nk.vqs.VariationalState, step: int, time: float, config: Dict[str, Any]) -> None:
-        Se_mean, Se_std = calculate_Se(vstate, geometry)
+        Se_mean, Se_std = calculate_Se(
+            vstate, geometry, dual=bool(config.get('dual_basis', False)))
 
         with open(config['filename'], 'r') as f:
             data = json.load(f)
@@ -607,24 +629,28 @@ def create_Se_callback(geometry) -> Callable:
 
 def calculate_vertex_stabilizer(
     vstate: nk.vqs.VariationalState,
-    geometry
+    geometry,
+    dual: bool = False
 ) -> Tuple[float, float]:
-    """Mean and std of the vertex/star-stabilizer expectations <A_v> = <XXXX>.
+    """Mean and std of the PHYSICAL vertex/star-stabilizer expectations <A_v>.
 
-    Complement to <B_p>: A_v = XXXX detects e (charge) excitations, B_p = ZZZZ detects
-    m (flux). The fermionic field creates both e and m, so BOTH <A_v> and <B_p> should
+    Complement to <B_p>: A_v detects e (charge) excitations, B_p detects m (flux).
+    The fermionic field creates both e and m, so BOTH <A_v> and <B_p> should
     degrade from 1 across the transition (A_v tracks e-condensation, B_p tracks m).
-    A_v is an off-diagonal 4-body X string but cheap at L=4.
+    In the primal basis A_v = XXXX (off-diagonal but cheap at L=4); in the dual
+    simulation basis the same physical operator is the Z-star (diagonal), so
+    `dual=True` swaps the constructor and the JSON key keeps its physical meaning.
 
     Returns (Av_mean, Av_std) over all vertex stars.
     """
     hi = vstate.hilbert
+    _s = nk.operator.spin.sigmaz if dual else nk.operator.spin.sigmax
     vals = []
     for vert in geometry.vertex_all:
         idx = [j for j in vert if j != -1]
         op = 1
         for j in idx:
-            op = op * nk.operator.spin.sigmax(hi, j)
+            op = op * _s(hi, j)
         vals.append(vstate.expect(op).mean)
     vals = np.array([float(np.real(v)) for v in vals])
     return float(vals.mean()), float(vals.std())
@@ -634,7 +660,8 @@ def create_vertex_stabilizer_callback(geometry) -> Callable:
     """Callback logging <A_v> mean/std. No internal step guard so an explicit
     end-of-run call always runs."""
     def vertex_callback(vstate: nk.vqs.VariationalState, step: int, time: float, config: Dict[str, Any]) -> None:
-        Av_mean, Av_std = calculate_vertex_stabilizer(vstate, geometry)
+        Av_mean, Av_std = calculate_vertex_stabilizer(
+            vstate, geometry, dual=bool(config.get('dual_basis', False)))
 
         with open(config['filename'], 'r') as f:
             data = json.load(f)
@@ -648,28 +675,47 @@ def create_vertex_stabilizer_callback(geometry) -> Callable:
     return vertex_callback
 
 
+def _check_flip_invariance(model, params, N, clusters, n_configs: int = 8) -> float:
+    """Max |Delta log psi| over configs x clusters when flipping each cluster's spins.
+
+    Shared primitive for the exact-symmetry gates: a symmetry that acts by spin flips
+    (X-type stabilizer in the simulation basis) must leave log psi unchanged.
+    """
+    assert len(clusters) > 0, "no flip clusters to test -- gate would pass vacuously"
+    rng = np.random.default_rng(0)
+    X = rng.choice([-1.0, 1.0], size=(n_configs, N))
+    base = np.asarray(model.apply({'params': params}, X))
+    max_dev = 0.0
+    for cluster in clusters:
+        Xf = X.copy()
+        Xf[:, np.asarray(cluster)] *= -1
+        flipped = np.asarray(model.apply({'params': params}, Xf))
+        max_dev = max(max_dev, float(np.max(np.abs(flipped - base))))
+    return max_dev
+
+
 def check_Av_invariance(model, params, geometry, n_configs: int = 8) -> float:
     """Exact vertex/gauge (A_v) symmetry check: log psi(sigma) == log psi(A_v sigma).
 
     At init the full_transformer (odd embedding + identity Block-1 + channelwise Wilson
     fusion) is exactly A_v-invariant; a nonzero deviation means the symmetry-at-init is
-    broken (biased embedding, a live sublayer, or a wrong fusion). Uses BULK vertex stars
-    (4 edges each) from the geometry. Returns max |Delta log psi| over configs x vertices.
+    broken (biased embedding, a live sublayer, or a wrong fusion). Uses ALL vertex stars
+    (bulk 4-edge + boundary 2-3-edge). Returns max |Delta log psi| over configs x vertices.
     """
-    N = geometry.N
-    # ALL vertex stabilizers (bulk 4-edge + boundary 2-3-edge); guard against a vacuous pass
     stars = list(geometry.vertex_bulk_hetero) + list(geometry.vertex_edge_hetero)
-    assert len(stars) > 0, "no vertex stars to test -- A_v gate would pass vacuously"
-    rng = np.random.default_rng(0)
-    X = rng.choice([-1.0, 1.0], size=(n_configs, N))
-    base = np.asarray(model.apply({'params': params}, X))
-    max_dev = 0.0
-    for star in stars:                                    # apply each A_v (flip its star spins)
-        Xf = X.copy()
-        Xf[:, np.asarray(star)] *= -1
-        flipped = np.asarray(model.apply({'params': params}, Xf))
-        max_dev = max(max_dev, float(np.max(np.abs(flipped - base))))
-    return max_dev
+    return _check_flip_invariance(model, params, geometry.N, stars, n_configs)
+
+
+def check_Bp_invariance(model, params, geometry, n_configs: int = 8) -> float:
+    """Exact plaquette (B_p) symmetry check for DUAL-BASIS runs.
+
+    In the Hadamard-conjugated simulation basis the physical B_p is an X-product, so
+    applying it flips the 4 plaquette edges; a star-Wilson network (function of star
+    products only, e.g. the dual Combo at identity init) must leave log psi unchanged.
+    Returns max |Delta log psi| over configs x plaquettes.
+    """
+    plaqs = [[e for e in p if e != -1] for p in geometry.plaq_all]
+    return _check_flip_invariance(model, params, geometry.N, plaqs, n_configs)
 
 
 def dump_attention(vstate, config) -> None:
@@ -744,7 +790,8 @@ def create_magnetization_callback(geometry) -> Callable:
         # Calculate every 8 steps regardless of Lx
         if step % 8 == 0:
             print(f"Step {step}: Calculating magnetizations...")
-            magnetizationsXmean, magnetizationsXstd, magnetizationsYmean, magnetizationsYstd, magnetizationsZmean, magnetizationsZstd = calculate_magnetizations(vstate, geometry)
+            magnetizationsXmean, magnetizationsXstd, magnetizationsYmean, magnetizationsYstd, magnetizationsZmean, magnetizationsZstd = calculate_magnetizations(
+                vstate, geometry, dual=bool(config.get('dual_basis', False)))
             
             with open(config['filename'], 'r') as f:
                 data = json.load(f)

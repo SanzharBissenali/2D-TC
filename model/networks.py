@@ -24,11 +24,12 @@ class KernelManager:
         N (int): Number of qubits
     """
     
-    def __init__(self, Lx: int, Ly: int, bc: str, kernel_size: int, kernel_size_inv: int, 
-                 arr_coord: np.ndarray, dg_p: Any, N: int):
+    def __init__(self, Lx: int, Ly: int, bc: str, kernel_size: int, kernel_size_inv: int,
+                 arr_coord: np.ndarray, dg_p: Any, N: int,
+                 dg_v: Any = None, vertex_all: Any = None, dual: bool = False):
         """
         Initialize the kernel manager.
-        
+
         Args:
             Lx: Lattice size in x direction
             Ly: Lattice size in y direction
@@ -38,6 +39,10 @@ class KernelManager:
             arr_coord: Array of qubit coordinates
             dg_p: Dual lattice for plaquette stabilizers
             N: Number of qubits
+            dg_v: Vertex lattice (dual-basis star grid); required iff dual=True
+            vertex_all: (Lx*Ly, 4) star link lists with -1 sentinels (dual mode)
+            dual: Also build the invariant-CNN kernel table over the Lx x Ly
+                VERTEX grid (dual-basis star-Wilson Combo). Off => byte-identical.
         """
         self.Lx = Lx
         self.Ly = Ly
@@ -47,6 +52,9 @@ class KernelManager:
         self.arr_coord = arr_coord
         self.dg_p = dg_p
         self.N = N
+        self.dg_v = dg_v
+        self.vertex_all = vertex_all
+        self.dual = dual
         
         # Generate shifts
         self.shifts_links = self._generate_pos_shifts()
@@ -211,9 +219,46 @@ class KernelManager:
         self.kernel_shifts_CNN = kernel_shifts_CNN[:, lst_ind]
         
         # Setup masks for CNN_invariant
-        self.zero_pad_indices_CNN = [jnp.argwhere(self.kernel_shifts_CNN[j] == -1) 
+        self.zero_pad_indices_CNN = [jnp.argwhere(self.kernel_shifts_CNN[j] == -1)
                                     for j in range(0, len(self.kernel_shifts_CNN))]
-    
+
+        # Dual-basis star grid: invariant-CNN kernel table over the Lx x Ly VERTEX
+        # grid (Wilson features live on stars there). Mirrors the plaquette build
+        # above with extent Lx instead of Lx-1 and a GLOBAL kernel (all Lx*Ly taps),
+        # so no kernel_size_inv-style column reduction is applied -- the config's
+        # kernel_size_inv = Lx-1 belongs to the plaquette table and is not reused.
+        if self.dual:
+            assert self.dg_v is not None, "dual KernelManager needs dg_v (vertex lattice)"
+            size_v = self.Lx  # vertex grid is Lx x Ly for both OBC and PBC
+            kernel_shifts_CNN_v = []
+            for a in range(0, size_v):
+                for b in range(0, size_v):
+                    if self.bc == "OBC":
+                        zr = [self._mapping2Dto1D_vert((self.dg_v.positions + np.array([a, b]))[j])
+                              for j in range(0, size_v * size_v)]
+                    else:
+                        zr = [self._mapping2Dto1D_vert((self.dg_v.positions + np.array([a, b]))[j] % self.Lx)
+                              for j in range(0, size_v * size_v)]
+
+                    for q in range(0, len(zr)):
+                        if len(zr[q]) == 0:
+                            zr[q] = -1
+                        else:
+                            zr[q] = zr[q][0][0]
+
+                    kernel_shifts_CNN_v.append(zr)
+
+            self.kernel_shifts_CNN_v = np.array(kernel_shifts_CNN_v)
+            self.zero_pad_indices_CNN_v = [jnp.argwhere(self.kernel_shifts_CNN_v[j] == -1)
+                                           for j in range(0, len(self.kernel_shifts_CNN_v))]
+
+    def _mapping2Dto1D_vert(self, coord: np.ndarray) -> np.ndarray:
+        """Map 2D coordinates to 1D index for vertices (dual-basis star grid)."""
+        return np.argwhere(np.logical_and(
+            self.dg_v.positions[:, 0] == coord[0],
+            self.dg_v.positions[:, 1] == coord[1]
+        ))
+
     def _mapping2Dto1D_plaq(self, coord: np.ndarray) -> np.ndarray:
         """Map 2D coordinates to 1D index for plaquettes."""
         return np.argwhere(np.logical_and(
@@ -257,8 +302,22 @@ def _Wilson_4spin_plaq(x, plaq_all: List[List[int]], rescale: float, dtype: Any 
     Returns:
         Wilson loop values
     """
+    pl = np.asarray(plaq_all)
+    if (pl == -1).any():
+        # Star (dual-basis) products: boundary vertex stars have 2-3 valid links,
+        # padded with -1. Mask the pads to a neutral 1.0 -- a raw gather would
+        # silently multiply in link N-1 (jnp treats -1 as the last index). This
+        # branch is decided at trace time (pl is static), so index lists without
+        # sentinels (the primal plaquette path) keep their original graph.
+        idx = jnp.asarray(np.where(pl == -1, 0, pl))
+        mask = jnp.asarray(pl != -1)
+        if dtype == "complex":
+            return (rescale * jnp.prod(jnp.where(mask, jnp.real(x[:, idx]), 1.0), axis=-1) +
+                    1j * rescale * jnp.prod(jnp.where(mask, jnp.imag(x[:, idx]), 1.0), axis=-1))
+        else:
+            return jnp.prod(jnp.where(mask, x[:, idx], 1.0), axis=-1)
     if dtype == "complex":
-        return (rescale * jnp.prod(jnp.real(x[:, jnp.array(plaq_all)]), axis=-1) + 
+        return (rescale * jnp.prod(jnp.real(x[:, jnp.array(plaq_all)]), axis=-1) +
                 1j * rescale * jnp.prod(jnp.imag(x[:, jnp.array(plaq_all)]), axis=-1))
     else:
         return jnp.prod(x[:, jnp.array(plaq_all)], axis=-1)
@@ -475,19 +534,25 @@ class CNN_invariant(nn.Module):
         kernel_manager: Kernel manager
         bc: Boundary conditions
         dtype: Data type
+        grid: 'plaq' (default, primal) or 'vertex' (dual-basis star grid)
     """
-    
+
     nfeatCNN_in: int
     nfeatCNN_out: int
     kernel_manager: Any
     bc: str
     dtype: Any = jnp.float64
-    
+    grid: str = 'plaq'
+
     @nn.compact
     def __call__(self, x):
         # Get kernels and masks from kernel manager
-        kernel_shifts_CNN = self.kernel_manager.kernel_shifts_CNN
-        zero_pad_indices_CNN = self.kernel_manager.zero_pad_indices_CNN
+        if self.grid == 'vertex':
+            kernel_shifts_CNN = self.kernel_manager.kernel_shifts_CNN_v
+            zero_pad_indices_CNN = self.kernel_manager.zero_pad_indices_CNN_v
+        else:
+            kernel_shifts_CNN = self.kernel_manager.kernel_shifts_CNN
+            zero_pad_indices_CNN = self.kernel_manager.zero_pad_indices_CNN
         
         # Create parameters
         Wconv = self.param(
@@ -516,13 +581,13 @@ class CNN_invariant(nn.Module):
         # Apply convolution
         _, x = jax.lax.scan(masked_conv, None, (mask_Wconv_CNN, kernel_shifts_CNN))
         
-        # Add bias
-        if self.bc == "OBC":
-            x = x.T + jnp.tensordot(bconv, jnp.ones(shape=(self.kernel_manager.Lx - 1) * 
-                                                   (self.kernel_manager.Ly - 1)), axes=0)
+        # Add bias (output-site count: plaquette grid is (Lx-1)x(Ly-1) at OBC;
+        # the dual-basis vertex/star grid is Lx x Ly for both boundary conditions)
+        if self.grid == 'vertex' or self.bc != "OBC":
+            n_sites = self.kernel_manager.Lx * self.kernel_manager.Ly
         else:
-            x = x.T + jnp.tensordot(bconv, jnp.ones(shape=(self.kernel_manager.Lx) * 
-                                                  (self.kernel_manager.Ly)), axes=0)
+            n_sites = (self.kernel_manager.Lx - 1) * (self.kernel_manager.Ly - 1)
+        x = x.T + jnp.tensordot(bconv, jnp.ones(shape=n_sites), axes=0)
         
         # Apply activation function
         if self.dtype == "complex":
@@ -783,6 +848,26 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
             sequence = noninv_sequence + [
                 WilsonNonlinearity(plaq_all_tuple, rescale, dtype)
             ] + [transformer_block]
+        elif config.get('dual_basis', False):
+            # Dual basis (Hadamard-conjugated H): the Wilson nonlinearity takes
+            # products over VERTEX stars (2-4 valid links, -1 sentinels masked in
+            # _Wilson_4spin_plaq) and the invariant CNN convolves the Lx x Ly star
+            # grid. At identity init Block-1 maps +-1 -> +-1 exactly, so the net
+            # starts exactly B_p-invariant -- the mirror of the primal A_v case.
+            assert getattr(kernel_manager, 'vertex_all', None) is not None and \
+                getattr(kernel_manager, 'kernel_shifts_CNN_v', None) is not None, (
+                "dual_basis needs KernelManager(dg_v=..., vertex_all=..., dual=True)"
+            )
+            vertex_all_tuple = tuple(tuple(int(e) for e in v)
+                                     for v in kernel_manager.vertex_all)
+            inv_sequence_v = [
+                CNN_invariant(
+                    repin, repout, kernel_manager, config['bc'], dtype, grid='vertex'
+                ) for repin, repout in zip(channels_invariant, channels_invariant[1:])
+            ]
+            sequence = noninv_sequence + [
+                WilsonNonlinearity(vertex_all_tuple, rescale, dtype)
+            ] + inv_sequence_v + [Final()]
         else:
             sequence = noninv_sequence + [
                 WilsonNonlinearity(plaq_all_tuple, rescale, dtype)

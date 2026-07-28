@@ -82,6 +82,12 @@ def parse_arguments() -> Dict[str, Any]:
     parser.add_argument('--Jbond', type=float, default=0.0, help='Bond coupling')
     parser.add_argument('--h_f', type=float, default=0.0,
                         help='Fermionic (dyon) X.Z field strength (real => keeps dtype float64)')
+    parser.add_argument('--dual_basis', action='store_true',
+                        help='Hadamard-conjugate H (swap sigma_x <-> sigma_z; same spectrum) and '
+                             'run the star-Wilson Combo CNN: Wilson products over vertex stars + '
+                             'invariant CNN on the Lx x Ly star grid. The exactly-embedded-at-init '
+                             'symmetry becomes B_p, so the valid cut is pure-hz (dual of pure-hx). '
+                             'CNN (Combo) arm only; hy/Jy/h_f unsupported (not self-dual).')
     
     # Optimization parameters
     parser.add_argument('--dt', type=float, required=True, help='Time step')
@@ -194,6 +200,7 @@ def parse_arguments() -> Dict[str, Any]:
             'Jy_v': 0.0,
             'Jbond': 0.0,
             'h_f': 0.0,
+            'dual_basis': False,
             'n_samples': 2**13,
             'n_chains': 2**10,  # Will be overridden by device detection
             'n_discard': 2**3,
@@ -251,6 +258,18 @@ def parse_arguments() -> Dict[str, Any]:
     
     # Calculate kernel_size_inv based on Lx
     args['kernel_size_inv'] = args['Lx'] - 1
+
+    # Dual basis is implemented for the Combo CNN only: the transformer arms hard-code
+    # the primal A_v machinery (plaquette tokens / A_v gates), and RPP fuses the
+    # plaquette Wilson channel inside its block. (kernel_size_inv above stays the
+    # PLAQUETTE-grid value; the dual star grid derives its own global kernel = Lx
+    # inside KernelManager.)
+    if args.get('dual_basis', False):
+        assert args.get('symmetric_block', 'cnn') == 'cnn' and \
+            args.get('architecture', 'Combo') == 'Combo', (
+            "--dual_basis supports only the Combo CNN arm "
+            "(--architecture Combo --symmetric_block cnn)"
+        )
 
     # --n_steps overrides sim_time (kept coupled so BOTH optimizer paths and the JSON
     # sim_params agree: n_iter is always derived as sim_time/dt).
@@ -343,6 +362,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "Jy_v": [config["Jy_v"]],
             "Jbond": [config["Jbond"]],
             "h_f": [config.get("h_f", 0.0)],
+            "dual_basis": [config.get("dual_basis", False)],
             "BC": [config["bc"]],
             "n_chann_inv": config["channels_inv"],
             "n_chann_noninv": config["channels_noninv"],

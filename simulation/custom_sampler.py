@@ -139,18 +139,26 @@ def create_custom_sampler(geometry, hi, config):
     # Extract vertex operators
     vertex_all = geometry.vertex_all
     N = geometry.N
-    
-    # Construct rule flipping vertices IN THE BULK (exclude boundary vertices)
-    full_vertex_ops = np.array(vertex_all)[np.all(np.array(vertex_all) != -1, axis=1)]
-    
-    # Ratio of probabilities for single flip vs vertex flip
-    samp_ratio = N / len(full_vertex_ops)
-    
+
+    if config.get('dual_basis', False):
+        # Dual basis: the network's (approximate) symmetry orbit moves are the
+        # PLAQUETTE flips (physical B_p is an X-product in the conjugated basis);
+        # all plaquettes have 4 valid edges, so no bulk filter is needed.
+        clusters = np.array(geometry.plaq_all)
+        assert (clusters != -1).all(), "plaq_all should have no -1 sentinels at OBC"
+        print("Custom sampler clusters: plaquette flips (dual basis)")
+    else:
+        # Construct rule flipping vertices IN THE BULK (exclude boundary vertices)
+        clusters = np.array(vertex_all)[np.all(np.array(vertex_all) != -1, axis=1)]
+
+    # Ratio of probabilities for single flip vs cluster flip
+    samp_ratio = N / len(clusters)
+
     # Single flip rule
     single_rule = nk.sampler.rules.LocalRule()
-    
-    # Vertex flip rule
-    vertex_rule = MultiRule(full_vertex_ops)
+
+    # Cluster (vertex- or plaquette-) flip rule
+    vertex_rule = MultiRule(clusters)
     
     # Combine vertex flip with single flip update
     weighted_rule = WeightedRule(

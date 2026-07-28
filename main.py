@@ -30,7 +30,7 @@ from simulation.observables import (
     create_wilson_loop_callback, create_magnetization_callback,
     create_renyi_callback, create_2point_callback, create_conditional_callbacks,
     create_plaquette_stabilizer_callback, create_vertex_stabilizer_callback,
-    create_Se_callback, check_Av_invariance, dump_attention
+    create_Se_callback, check_Av_invariance, check_Bp_invariance, dump_attention
 )
 from utils.config import setup_environment, parse_arguments, create_data_dict, save_data
 from utils.io import save_model, log_runtime, record_experiment_info
@@ -88,6 +88,7 @@ def main():
         Jbond=config.get('Jbond', 0.0),
         h_f=config.get('h_f', 0.0),
         fermion_pairs=geometry.fermion_pairs,
+        dual_basis=config.get('dual_basis', False),
         dtype=config['dtype']
     )
     
@@ -100,7 +101,10 @@ def main():
         kernel_size_inv=config['kernel_size_inv'],
         arr_coord=geometry.arr_coord,
         dg_p=geometry.dg_p,
-        N=geometry.N
+        N=geometry.N,
+        dg_v=geometry.dg_v,
+        vertex_all=geometry.vertex_all,
+        dual=config.get('dual_basis', False)
     )
     
     # Create the neural network model
@@ -166,6 +170,20 @@ def main():
                 f"B_p tokenization (Variant 3)"
             )
 
+    # Dual-basis Combo CNN: the exactly-embedded-at-init symmetry is B_p (plaquette
+    # flips preserve every star product; Block-1's scaled sigmoid maps +-1 -> +-1
+    # exactly at identity init). Init-only gate -- training legitimately breaks it
+    # via Block-1, exactly as the primal CNN breaks A_v.
+    if config.get('dual_basis', False):
+        dev = check_Bp_invariance(model, vs.parameters, geometry)
+        print(f"[B_p init-invariance] max |Delta log psi| = {dev:.2e}")
+        if not config.get('init_params'):
+            assert dev < 1e-6, (
+                f"B_p symmetry BROKEN at init (max dev {dev:.2e}) -- check the star-Wilson "
+                f"masking (-1 sentinels) / identity init of Block-1 / the vertex-grid "
+                f"invariant-CNN kernel table"
+            )
+
     # Setup callbacks for observables
     callbacks = create_conditional_callbacks(geometry)
 
@@ -193,6 +211,9 @@ def main():
     
     # For Lx >= 6, calculate the Wilson-loop observables at the end (expensive)
     if geometry.Lx >= 6:
+        if config.get('dual_basis', False):
+            print("WARNING: calculate_wilson_loops labels X/Z in the SIMULATION basis; "
+                  "under --dual_basis the physical meanings are swapped (not remapped here).")
         # Calculate Wilson loops
         callback = create_wilson_loop_callback(geometry)
         callback(vs, -1, -1, config)

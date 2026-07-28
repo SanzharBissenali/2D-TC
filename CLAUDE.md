@@ -312,6 +312,45 @@ breaks it by the learned χ dressing — that's how `h_z` (anticommutes with A_v
   runtime got OOM-killed WITH observables — netket Pauli→sparse intermediates + the 48-op
   observable pass stack up; energies-only fits).
 
+## Current work — dual-basis (star-Wilson) Combo CNN (branch `variant3-plaquette-transformer`)
+e↔m duality experiment on the **CNN** (user verdict: CNN >> every transformer arm — default new
+experiments to the Combo CNN). `--dual_basis` Hadamard-conjugates H (σx↔σz alias inside
+`create_hamiltonian`: stars→Z-products, plaquettes→X-products, hx→σᶻ field, hz→σˣ; **same
+spectrum** ⇒ ED files/CLI unchanged) and swaps the Combo's symmetric machinery: Wilson
+nonlinearity takes **masked products over vertex stars** (`vertex_all` has −1 sentinels — 12 of 16
+L=4 stars are 2/3-link boundary stars; `_Wilson_4spin_plaq` grows a static-branch mask, primal
+graph untouched) and the invariant CNN runs on the **L×L star grid** (`KernelManager(dual=True,
+dg_v=…, vertex_all=…)` builds `kernel_shifts_CNN_v`, global kernel = Lx taps — the config's
+`kernel_size_inv=Lx−1` stays plaquette-only; `CNN_invariant(grid='vertex')`). The
+exactly-embedded-at-init symmetry becomes **B_p** (plaquette flips preserve star products;
+Block-1's scaled sigmoid maps ±1→±1 EXACTLY at identity init) — enforced by a new init-only
+`check_Bp_invariance` gate in `main.py`. Valid standalone cut = pure-hz (dual of pure-hx).
+- **Physics recap (why):** in the z-basis A_v is the architectural symmetry and B_p a learned
+  sector constraint; sampling in the x-basis (≡ conjugated H in the computational basis) swaps
+  the roles exactly. Params: primal 1,681 vs dual 2,633 (16-tap vs 9-tap global kernel — OBC
+  is not self-dual: 16 stars vs 9 plaquettes, boundary types swap).
+- **Not self-dual ⇒ asserted off in dual mode:** σy→−σy and h_f: X_a·Z_b→Z_a·X_b (hy/Jy_*/h_f
+  guarded in `create_hamiltonian`); Jbond is self-dual. Dual is **Combo-CNN only** (config
+  finalize assert) — transformer arms hard-code primal A_v machinery. Wilson-loop observables
+  at L≥6 would have X/Z labels swapped (warning printed, not remapped).
+- **Observables keep PHYSICAL meaning:** `calculate_{plaquette,vertex}_stabilizer`,
+  `calculate_magnetizations` (Y negated), `calculate_Se` take `dual=` (callbacks read
+  `config['dual_basis']`) so `Bp_mean`/`Av_mean`/`mag_*` JSON keys are basis-independent.
+  Custom sampler flips **plaquette clusters** in dual mode (the orbit moves; all 4-valid).
+- **Experiment (`colab/dual_basis_L4.ipynb`, W&B group `dual-basis-L4`):** validated CNN recipe
+  (tdvp, dt 0.01, ds 6e-5, 350 steps, custom sampler). Arms: `cnnP`(0.2,0) vs `cnnD`(0,0.2)
+  — the dual pair, each vs its own ED (ED-first cell; `ed_L4_hx0.00_hz0.20.json` ships,
+  E0=−25.24695976382697; (0.2,0)+(0.1,0.1) computed in-notebook, High-RAM + `--no-observables`)
+  — plus `cnnP_m`/`cnnD_m` @ (0.1,0.1) where each basis carries the opposite approximate-symmetry
+  burden (compare converged rel-err = whose bias/optimization floor is lower). Expected mirror:
+  cnnP ⟨A_v⟩≈1/⟨B_p⟩<1; cnnD ⟨B_p⟩≈1/⟨A_v⟩<1.
+- **Local verify:** `scratchpad/validate_dual.py` (numpy-only) ALL PASS — masked star-Wilson ==
+  ragged product (spins + float features), star products exactly B_p-invariant, vertex kernel
+  table decode, param counts 1,681/2,633, and an L=2 dense-kron proof that the constructor swap
+  == W·H·W (Hadamard⊗N) with identical spectra. `py_compile` clean; smoke runs happen on Colab.
+- Pre-existing (flagged, NOT fixed): `MultiRule` off-by-one (`custom_sampler.py`,
+  `maxval=n_clusters-1` ⇒ last cluster never proposed; ergodicity safe via single-flip rule).
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

@@ -21,6 +21,7 @@ def create_hamiltonian(
     Jbond: float = 0.0,
     h_f: float = 0.0,
     fermion_pairs: Optional[List[List[int]]] = None,
+    dual_basis: bool = False,
     dtype: Any = complex
 ) -> nk.operator.AbstractOperator:
     """
@@ -40,13 +41,28 @@ def create_hamiltonian(
         Jbond: Bond coupling
         h_f: Fermionic (dyon) X.Z field strength
         fermion_pairs: List of [x_link, z_link] pairs for the S_e = X_a.Z_b field
+        dual_basis: Hadamard-conjugate the Hamiltonian (swap sigma_x <-> sigma_z
+            everywhere): H_dual = W H W with W = H_2^(x)N. Stars become Z-products
+            (diagonal), plaquettes X-products, hx -> sigma_z field, hz -> sigma_x.
+            Same spectrum as H (unitary), so ED references are unchanged.
         dtype: Data type for the Hamiltonian
-        
+
     Returns:
         The toric code Hamiltonian
     """
     H = 0
     N = hi.size
+
+    # Hadamard conjugation is NOT a plain swap for sigma_y (W sy W = -sy) or for the
+    # fermionic S_e = X_a.Z_b (maps to Z_a.X_b, a geometrically different operator
+    # set), so those perturbations are out of scope in dual mode.
+    if dual_basis:
+        assert hy == 0 and Jy_v == 0 and Jy_p == 0 and h_f == 0, (
+            "dual_basis: sigma_y -> -sigma_y and X_a.Z_b -> Z_a.X_b under Hadamard "
+            "conjugation; hy / Jy_v / Jy_p / h_f are not supported in dual mode"
+        )
+    _sx = nk.operator.spin.sigmaz if dual_basis else nk.operator.spin.sigmax
+    _sz = nk.operator.spin.sigmax if dual_basis else nk.operator.spin.sigmaz
 
     # The Hamiltonian OPERATOR must be complex whenever sigma^y appears (hy or a Y coupling),
     # since sigmay is imaginary. This is independent of the MODEL parameter dtype: for the v3
@@ -62,7 +78,7 @@ def create_hamiltonian(
         op = 1
         for j in range(0, len(vertex_all[v])):
             if vertex_all[v][j] != -1:
-                op *= nk.operator.spin.sigmax(hi, vertex_all[v][j], dtype=dtype)
+                op *= _sx(hi, vertex_all[v][j], dtype=dtype)
         H += -J * op
         
         # YYYY vertex terms
@@ -80,7 +96,7 @@ def create_hamiltonian(
         op = 1
         for j in range(0, len(plaq_all[p])):
             if plaq_all[p][j] != -1:
-                op *= nk.operator.spin.sigmaz(hi, plaq_all[p][j], dtype=dtype)
+                op *= _sz(hi, plaq_all[p][j], dtype=dtype)
         H += -J * op
         
         # YYYY plaquette terms
@@ -95,9 +111,9 @@ def create_hamiltonian(
     # Add magnetic field perturbations
     for j in range(0, N):
         if hz != 0:
-            H += -nk.operator.spin.sigmaz(hi, j, dtype=dtype) * hz
+            H += -_sz(hi, j, dtype=dtype) * hz
         if hx != 0:
-            H += -nk.operator.spin.sigmax(hi, j, dtype=dtype) * hx
+            H += -_sx(hi, j, dtype=dtype) * hx
         if hy != 0:
             assert dtype == "complex", "Y magnetic field requires complex Hamiltonian"
             H += -nk.operator.spin.sigmay(hi, j, dtype=dtype) * hy
