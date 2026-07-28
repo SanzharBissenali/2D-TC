@@ -136,6 +136,10 @@ def parse_arguments() -> Dict[str, Any]:
     parser.add_argument('--tf_content', action=argparse.BooleanOptionalAction, default=True,
                         help='plaquette_transformer: trainable per-head content gate alpha_h '
                              '(--no-tf_content freezes alpha_h=0 => normalized-factored ablation)')
+    parser.add_argument('--tf_remat', action='store_true',
+                        help='plaquette_transformer: gradient-checkpoint (jax.remat) each encoder '
+                             'block -- recompute activations in the backward pass instead of '
+                             'storing them (slower, much lower peak memory for big d/L)')
     parser.add_argument('--seed', type=int, default=0,
                         help='PRNG seed for the variational state (deterministic paired runs)')
 
@@ -203,6 +207,7 @@ def parse_arguments() -> Dict[str, Any]:
             'tf_readout_K': 0,
             'tf_complex_output': False,
             'tf_content': True,
+            'tf_remat': False,
             'seed': 0,
             'wandb': False,
             'wandb_project': '2d-tc',
@@ -336,6 +341,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "tf_readout_K": [config.get("tf_readout_K", 0)],
             "tf_complex_output": [config.get("tf_complex_output", False)],
             "tf_content": [config.get("tf_content", True)],
+            "tf_remat": [config.get("tf_remat", False)],
             "optimizer": [config.get("optimizer", "tdvp")],
             "lr": [config.get("lr", 0.0)],
             "seed": [config.get("seed", 0)],

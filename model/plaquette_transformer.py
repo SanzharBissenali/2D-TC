@@ -129,6 +129,7 @@ class PlaquetteTransformer(nn.Module):
     ffn_mult: int = 2
     activation: str = "gelu"
     use_content: bool = True
+    remat: bool = False    # gradient-checkpoint each block (recompute in backward)
     dtype: Any = jnp.float64
 
     @nn.compact
@@ -142,12 +143,16 @@ class PlaquetteTransformer(nn.Module):
         idx = ((t + 1.0) / 2.0).astype(jnp.int32)                      # {0, 1}
         x = E[idx]                                                     # (n_plaq, d)
 
+        # remat trades compute for memory: activations inside each block are dropped
+        # after the forward pass and recomputed during the backward pass, so the
+        # per-sample jacobian/grad peak no longer scales with n_layers.
+        Block = nn.remat(EncoderBlockV3) if self.remat else EncoderBlockV3
         for l in range(self.n_layers):
-            x = EncoderBlockV3(d_model=self.d_model, n_heads=self.n_heads,
-                               n_disp=self.n_disp, D=self.D,
-                               ffn_mult=self.ffn_mult, activation=self.activation,
-                               use_content=self.use_content, dtype=self.dtype,
-                               name=f"block{l}")(x)
+            x = Block(d_model=self.d_model, n_heads=self.n_heads,
+                      n_disp=self.n_disp, D=self.D,
+                      ffn_mult=self.ffn_mult, activation=self.activation,
+                      use_content=self.use_content, dtype=self.dtype,
+                      name=f"block{l}")(x)
 
         z = jnp.sum(x, axis=0)                                         # sum-pool -> (d,)
         z = nn.RMSNorm(param_dtype=self.dtype, name="out_norm")(z)
