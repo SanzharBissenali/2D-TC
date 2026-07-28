@@ -17,7 +17,8 @@ from utils import wandb_logger
 
 
 # --- instability instrumentation (arm-agnostic; used by both CNN and transformer arms) ---
-_WRAP = ("Sequential", "FullTransformer", "TransformerSymmetric", "PlaquetteTransformer")
+_WRAP = ("Sequential", "FullTransformer", "TransformerSymmetric", "PlaquetteTransformer",
+         "GaugeComboTransformer")
 
 
 def _key_str(k):

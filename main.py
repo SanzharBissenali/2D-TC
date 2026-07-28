@@ -145,12 +145,12 @@ def main():
     # full_transformer: at init only (odd embedding + identity Block-1 + Wilson fusion).
     # plaquette_transformer (Variant 3): at ANY parameters (B_p tokens are a change of
     # variables), so the same check is a full architecture-correctness gate.
-    if config.get('symmetric_block') in ('full_transformer', 'plaquette_transformer'):
+    if config.get('symmetric_block') in ('full_transformer', 'plaquette_transformer', 'variant1'):
         dev = check_Av_invariance(model, vs.parameters, geometry)
         print(f"[A_v init-invariance] max |Delta log psi| = {dev:.2e}")
         assert dev < 1e-6, (
             f"A_v symmetry BROKEN at init (max dev {dev:.2e}) -- check odd embedding / "
-            f"zero-init Block-1 sublayers / channelwise Wilson fusion (v2), or the "
+            f"zero-init chi sublayers / channelwise Wilson product (v2/variant1), or the "
             f"B_p tokenization (Variant 3)"
         )
 
@@ -211,8 +211,8 @@ def main():
     callback(vs, -1, -1, config)
 
     # Attention interpretability dump: gamma ranges + alpha tables (full_transformer),
-    # or the per-(layer, head) content-gate alpha_h (plaquette_transformer / Variant 3).
-    if config.get('symmetric_block') in ('full_transformer', 'plaquette_transformer'):
+    # or the per-(layer, head) content-gate alpha_h (plaquette_transformer / variant1).
+    if config.get('symmetric_block') in ('full_transformer', 'plaquette_transformer', 'variant1'):
         dump_attention(vs, config)
 
     # Log runtime

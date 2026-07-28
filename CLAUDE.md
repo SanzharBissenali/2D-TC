@@ -278,6 +278,30 @@ layer/head = the content-routing diagnostic, dumped to `*_attn.json` via `dump_a
   1e-6–1e-7 V-score, and check the trained α_h gates (≈0 ⇒ no content routing at the symmetric
   point, as theory predicts).
 
+## Current work — Variant 1: gauge-combo transformer (same branch as Variant 3)
+The spec's Variant 1, built on the validated Variant-3 blocks (NOT the old v2 `full_transformer`,
+which is its factored-attention cousin with LayerNorm/GELU/biases and an unresolved V-score floor):
+`σ → odd embed σ_e·w_orient (bias-free) → n1 × χ blocks (gated FULL attention over the
+orientation-resolved edge-displacement table, zero-init W_O+ffn1 ⇒ IDENTITY at init, tanh FFN,
+pre-RMSNorm — RMSNorm is odd, LayerNorm isn't) → fixed Wilson ∏₄tanh(·) channel-wise →
+Dense(C→d) → n2 × EncoderBlockV3 (Variant-3 backbone) → sum-pool → RMSNorm → Dense_K → Σlog-cosh`.
+A_v exact AT INIT (= Variant 3 with a linear embedding: every channel `B_p×const`); training
+breaks it by the learned χ dressing — that's how `h_z` (anticommutes with A_v) is captured.
+- **Code:** `model/gauge_combo_transformer.py` (`GaugeComboTransformer`); `zero_init_out` option
+  added to `GatedMHA_OBC`/`EncoderBlockV3`. Selector `--symmetric_block variant1`; χ knobs
+  `--tf1_layers/--tf1_dmodel/--tf1_heads` (Ω reuses the `--tf_*` flags). main.py A_v gate (init-
+  only for this arm) + `dump_attention` cover it; optimizer `_WRAP` += GaugeComboTransformer.
+  Defaults: χ C=8/1 block/2 heads + Ω d16/nl4/h4 ⇒ **9,966 params**.
+- **Benchmark:** `(h_x,h_z)=(0.2,0.2)`, L=4, vs new ED `ed_L4_hx0.20_hz0.20.json` (the spec's
+  ablation-ladder point). `colab/variant1_L4.ipynb`: **ED runs FIRST**, then arms `v1` (gated) /
+  `v1f` (frozen-α) / `cnn` (Combo-small baseline, native tdvp + ds 6e-5 — optimizer differs from
+  the minSR transformer arms ⇒ compare converged quality, not s/step), all into W&B project
+  `2d-tc-transformer` group `variant1-L4`. Watch χ's α gates (`chi0…`) vs Ω's (`block0…`): with
+  h_z≠0, χ is where content routing should first switch on (syndrome-matching claim).
+- **Local verify:** `scratchpad/validate_v1gc.py` (numpy-only: init factorization t=B_p×const per
+  channel, exact A_v invariance over all 16 stars, edge-table `n_disp=16L²−32L+14=142`, param
+  count 9,966) — ALL PASS + `py_compile` clean. Not yet trained.
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

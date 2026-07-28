@@ -46,8 +46,9 @@ class GatedMHA_OBC(nn.Module):
     d_model: int
     n_heads: int
     n_disp: int
-    D: Any                 # (n_plaq, n_plaq) int, tuple-of-tuples (hashable)
+    D: Any                 # (n_tokens, n_tokens) int, tuple-of-tuples (hashable)
     use_content: bool = True
+    zero_init_out: bool = False   # zero-init Wo => sublayer contributes 0 at init (identity block)
     dtype: Any = jnp.float64
 
     @nn.compact
@@ -77,7 +78,10 @@ class GatedMHA_OBC(nn.Module):
 
         out = jnp.einsum("hij,hjd->hid", A, v)                         # (h, n, d_head)
         out = out.transpose(1, 0, 2).reshape(n, d)                     # concat heads
-        return nn.Dense(d, use_bias=False, param_dtype=self.dtype, name="Wo")(out)
+        wo_init = (nn.initializers.zeros if self.zero_init_out
+                   else nn.initializers.lecun_normal())
+        return nn.Dense(d, use_bias=False, param_dtype=self.dtype,
+                        kernel_init=wo_init, name="Wo")(out)
 
 
 class EncoderBlockV3(nn.Module):
@@ -90,6 +94,7 @@ class EncoderBlockV3(nn.Module):
     ffn_mult: int = 2
     activation: str = "gelu"
     use_content: bool = True
+    zero_init_out: bool = False   # zero-init Wo + ffn1 => whole block == identity at init
     dtype: Any = jnp.float64
 
     @nn.compact
@@ -99,7 +104,8 @@ class EncoderBlockV3(nn.Module):
         y = nn.RMSNorm(param_dtype=self.dtype, name="norm1")(x)
         y = GatedMHA_OBC(d_model=self.d_model, n_heads=self.n_heads,
                          n_disp=self.n_disp, D=self.D,
-                         use_content=self.use_content, dtype=self.dtype,
+                         use_content=self.use_content,
+                         zero_init_out=self.zero_init_out, dtype=self.dtype,
                          name="attn")(y)
         x = x + y
 
@@ -107,8 +113,10 @@ class EncoderBlockV3(nn.Module):
         z = nn.Dense(self.ffn_mult * self.d_model, use_bias=False,
                      param_dtype=self.dtype, name="ffn0")(z)
         z = act(z)
-        z = nn.Dense(self.d_model, use_bias=False,
-                     param_dtype=self.dtype, name="ffn1")(z)
+        ffn1_init = (nn.initializers.zeros if self.zero_init_out
+                     else nn.initializers.lecun_normal())
+        z = nn.Dense(self.d_model, use_bias=False, param_dtype=self.dtype,
+                     kernel_init=ffn1_init, name="ffn1")(z)
         return x + z
 
 

@@ -114,14 +114,20 @@ def parse_arguments() -> Dict[str, Any]:
     # 'cnn' (default) = original global-kernel invariant CNN; 'transformer' = replace Block 3
     # with a factored-attention encoder stack (Block 1 + Wilson nonlinearity unchanged).
     parser.add_argument('--symmetric_block',
-                        choices=['cnn', 'transformer', 'full_transformer', 'plaquette_transformer'],
+                        choices=['cnn', 'transformer', 'full_transformer', 'plaquette_transformer',
+                                 'variant1'],
                         default='cnn',
                         help="Block-3 arch: 'cnn' | 'transformer' (v1) | 'full_transformer' (v2, whole pipeline)"
-                             " | 'plaquette_transformer' (Variant 3: B_p tokens + gated full attention)")
+                             " | 'plaquette_transformer' (Variant 3: B_p tokens + gated full attention)"
+                             " | 'variant1' (gauge-combo: chi edge cleaning + Wilson + Variant-3 backbone)")
     parser.add_argument('--tf_layers', type=int, default=2,
                         help='Transformer: number of encoder blocks (Block 2 in full_transformer)')
     parser.add_argument('--tf1_layers', type=int, default=1,
-                        help='full_transformer: number of Block-1 spatial-attention encoder blocks')
+                        help='full_transformer/variant1: number of chi (edge-token) encoder blocks')
+    parser.add_argument('--tf1_dmodel', type=int, default=8,
+                        help='variant1: chi channels C per edge token')
+    parser.add_argument('--tf1_heads', type=int, default=2,
+                        help='variant1: chi attention heads (must divide tf1_dmodel)')
     parser.add_argument('--tf_gamma_init', type=float, default=7.862,
                         help='full_transformer: local gamma init for the exp(-gamma d) distance kernel')
     parser.add_argument('--tf_dmodel', type=int, default=8, help='Transformer: embedding dimension d')
@@ -199,6 +205,8 @@ def parse_arguments() -> Dict[str, Any]:
             'symmetric_block': 'cnn',
             'tf_layers': 2,
             'tf1_layers': 1,
+            'tf1_dmodel': 8,
+            'tf1_heads': 2,
             'tf_gamma_init': 7.862,
             'tf_dmodel': 8,
             'tf_heads': 2,
@@ -333,6 +341,8 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "symmetric_block": [config.get("symmetric_block", "cnn")],
             "tf_layers": [config.get("tf_layers", 0)],
             "tf1_layers": [config.get("tf1_layers", 0)],
+            "tf1_dmodel": [config.get("tf1_dmodel", 0)],
+            "tf1_heads": [config.get("tf1_heads", 0)],
             "tf_gamma_init": [config.get("tf_gamma_init", 0.0)],
             "tf_dmodel": [config.get("tf_dmodel", 0)],
             "tf_heads": [config.get("tf_heads", 0)],

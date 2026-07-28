@@ -647,6 +647,54 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
         )
         return create_sequential_model(v3)
 
+    # Variant 1: gauge-combo transformer -- chi (gated-full-attention edge cleaning,
+    # identity at init) -> fixed channel-wise Wilson product -> Variant-3 backbone.
+    # Exact A_v symmetry AT INIT (odd embedding + zero-init chi sublayers + odd tanh
+    # bound); deliberately broken by training to capture A_v-non-commuting fields (hz).
+    if config.get('symmetric_block', 'cnn') == 'variant1':
+        from model.gauge_combo_transformer import (
+            GaugeComboTransformer, edge_displacement_table
+        )
+        from model.transformer_block import plaquette_displacement_table
+        assert config['tf_dmodel'] % config['tf_heads'] == 0, (
+            f"tf_dmodel ({config['tf_dmodel']}) must be divisible by tf_heads ({config['tf_heads']})"
+        )
+        assert config['tf1_dmodel'] % config['tf1_heads'] == 0, (
+            f"tf1_dmodel ({config['tf1_dmodel']}) must be divisible by tf1_heads ({config['tf1_heads']})"
+        )
+        assert dtype == "float64", (
+            f"variant1 is validated only for the sign-free real path (dtype float64), got {dtype!r}"
+        )
+        assert all(e >= 0 for p in plaq_all_tuple for e in p), (
+            "variant1 Wilson product needs 4 valid edges per plaquette (no -1 sentinel)"
+        )
+        orient_e, D_e, n_disp_e = edge_displacement_table(kernel_manager.arr_coord)
+        D_p, n_disp_p = plaquette_displacement_table(
+            kernel_manager.dg_p.positions, kernel_manager.Lx, kernel_manager.Ly
+        )
+        readout_K = config.get('tf_readout_K', 0) or config['tf_dmodel']
+        v1 = GaugeComboTransformer(
+            chi_layers=config['tf1_layers'],
+            chi_dim=config['tf1_dmodel'],
+            chi_heads=config['tf1_heads'],
+            orient_e=tuple(int(v) for v in orient_e),
+            n_disp_e=n_disp_e,
+            D_e=tuple(tuple(int(v) for v in row) for row in D_e),
+            plaq_all=plaq_all_tuple,
+            n_layers=config['tf_layers'],
+            d_model=config['tf_dmodel'],
+            n_heads=config['tf_heads'],
+            n_disp=n_disp_p,
+            D=tuple(tuple(int(v) for v in row) for row in D_p),
+            readout_K=readout_K,
+            ffn_mult=config['tf_ffn_mult'],
+            activation=config['tf_activation'],
+            use_content=config.get('tf_content', True),
+            remat=config.get('tf_remat', False),
+            dtype=dtype,
+        )
+        return create_sequential_model(v1)
+
     # v2: full-transformer pipeline replaces the ENTIRE Combo stack (Block 1 CNN +
     # Wilson + Block 3 CNN) with transformers. Exact A_v symmetry is preserved at init
     # by the odd embedding + identity-init Block-1 blocks + channelwise Wilson fusion.
