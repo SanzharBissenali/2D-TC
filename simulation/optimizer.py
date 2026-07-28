@@ -282,10 +282,6 @@ def run_minsr(
     inside the driver, so those fields are 0 and ``step_time`` carries the total.
     """
     import optax
-    try:
-        from netket.driver import VMC_SR                     # netket >= 3.16 stable
-    except ImportError:
-        from netket.experimental.driver import VMC_SR        # pre-promotion location
 
     dt = config['dt']
     lr = config.get('lr', 0.0) or dt                         # 0 => reuse dt as the lr
@@ -302,12 +298,21 @@ def run_minsr(
     else:
         schedule = lr
 
-    driver = VMC_SR(
-        hamiltonian, optax.sgd(schedule),
-        variational_state=vstate,
-        diag_shift=diag_shift,
-        use_ntk=True,                                        # kernel trick: N_s x N_s solve
-    )
+    # netket 3.16.x ships minSR as VMC_SRt (the SRt/kernel-trick driver, N_s x N_s
+    # solve by construction); later netkets renamed it VMC_SR(use_ntk=True). Try
+    # the pinned-env name first.
+    opt = optax.sgd(schedule)
+    try:
+        from netket.experimental.driver import VMC_SRt
+        driver = VMC_SRt(hamiltonian, opt, diag_shift=diag_shift,
+                         variational_state=vstate)
+    except ImportError:                                      # netket >= 3.17
+        try:
+            from netket.driver import VMC_SR
+        except ImportError:
+            from netket.experimental.driver import VMC_SR
+        driver = VMC_SR(hamiltonian, opt, diag_shift=diag_shift,
+                        variational_state=vstate, use_ntk=True)
 
     loop = tqdm(range(n_iter))
     t = 0.0

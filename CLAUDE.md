@@ -128,7 +128,8 @@ nonlinearity + sampler/optimizer/seed byte-identical. Kept on its own branch for
   (`observables.calculate_plaquette_stabilizer`, must stay ≈1 — contamination check).
 - **Optimizer note:** the repo's SR is a hand-rolled **dense P×P** QGT solve (`optimizer.py`),
   so fewer params give a *super-linear* solve speedup ⇒ param-matching both arms also matches
-  solve cost. A `VMC_SR(use_ntk=True)` (SRt/minSR; `VMC_SRt` deprecated in netket 3.16) swap is
+  solve cost. A minSR swap (`VMC_SRt` in the pinned netket 3.16.x; renamed `VMC_SR(use_ntk=True)`
+  in LATER netkets — 3.16 does NOT have `VMC_SR`, verified against the wheel) is
   P-independent and would change the CNN baseline too ⇒ deliberately out of scope (both-or-neither).
 - **Local verify done:** all changed files `py_compile`-clean; `scratchpad/validate_tf.py`
   (numpy-only) confirms the displacement table (no wrap, correct decode/range) and param counts
@@ -238,7 +239,8 @@ layer/head = the content-routing diagnostic, dumped to `*_attn.json` via `dump_a
   (for Variant 3 the A_v check must pass at ANY params, not just init — full correctness gate).
 - **Default arm:** `d=32, 4 layers, 4 heads, FFN 2d` ⇒ **34,560 params** (vs CNN 1,233!). The
   hand-rolled DENSE P×P SR solve would need ~9.5 GB QGT + O(P³)/step at P≈35k ⇒ **minSR added**:
-  `--optimizer minsr` → `simulation/optimizer.run_minsr` = NetKet `VMC_SR(use_ntk=True)` (kernel
+  `--optimizer minsr` → `simulation/optimizer.run_minsr` = NetKet `VMC_SRt` (the 3.16.x minSR
+  driver; falls back to the later-netket `VMC_SR(use_ntk=True)` name if SRt is absent) (kernel
   trick, `N_samples×N_samples` solve — bottleneck is the sample budget, not P). Same per-step
   JSON/tqdm/W&B logging as `run_tdvp` (t_sample/t_grad/t_sr not separable inside the driver ⇒ 0;
   `step_time` carries the total); logs the v3 content gates `alpha/<block>_h<i>` to W&B every 8
