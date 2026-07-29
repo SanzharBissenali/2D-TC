@@ -348,6 +348,18 @@ Block-1's scaled sigmoid maps ±1→±1 EXACTLY at identity init) — enforced b
   ragged product (spins + float features), star products exactly B_p-invariant, vertex kernel
   table decode, param counts 1,681/2,633, and an L=2 dense-kron proof that the constructor swap
   == W·H·W (Hadamard⊗N) with identical spectra. `py_compile` clean; smoke runs happen on Colab.
+- **RESULT (2026-07-29, L=4, all runs done): performance is governed by the perturbation's
+  DIAGONALITY in the sampling basis, NOT by matching the embedded symmetry to the conserved
+  stabilizer family.** The arm whose Wilson tokens are frozen (conserved family) and whose
+  Block-1 does a smooth diagonal dressing wins (V ~1e-5..1e-7); the "tokens carry the physics"
+  arm plateaus ~1e-3 (off-diagonal field ⇒ noisy E_loc ratios ⇒ noisy SR). Note V-score
+  = ⟨H²⟩−⟨H⟩² is basis-independent for a FIXED state — gaps reflect training dynamics
+  (variance budget Σ c_t²ε_t²: magnitude enters squared, count ~linearly, per-flip
+  learnedness ε_t dominates). OBC non-self-duality adds a constant dual handicap
+  (soft 2/3-body boundary stars) ⇒ at L=4 dual only pays off for hx ≳ 2–3·hz (tie observed
+  at (0.3,0.1); primal wins 10× at (0.1,0.3)). Experiment CLOSED — purpose was to learn how
+  swapping the Wilson-coarse-graining operator affects performance; findings transfer to the
+  3D toric-code repo (dual basis ⇒ Wilson over vertex stars, enforces B_p).
 - Pre-existing (flagged, NOT fixed): `MultiRule` off-by-one (`custom_sampler.py`,
   `maxval=n_clusters-1` ⇒ last cluster never proposed; ergodicity safe via single-flip rule).
 
