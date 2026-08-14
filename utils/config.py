@@ -88,6 +88,14 @@ def parse_arguments() -> Dict[str, Any]:
                              'invariant CNN on the Lx x Ly star grid. The exactly-embedded-at-init '
                              'symmetry becomes B_p, so the valid cut is pure-hz (dual of pure-hx). '
                              'CNN (Combo) arm only; hy/Jy/h_f unsupported (not self-dual).')
+    parser.add_argument('--ftc', action='store_true',
+                        help='Fermionic toric code: replace each vertex star A_v = XXXX by the '
+                             'dressed A\'_v = A_v * B_NE(v) (CKR bosonization Gauss law, '
+                             'arXiv:1711.00515). Same stabilizer group => same unperturbed ground '
+                             'state and E0 = -(#stars + #plaquettes), but H is non-stoquastic from '
+                             'the start; the epsilon fermion is the cheap plaquette-sector defect. '
+                             'Real operator (even Y count): pure ftc stays float64; ftc + field '
+                             'forces dtype=complex (signful perturbed GS).')
     
     # Optimization parameters
     parser.add_argument('--dt', type=float, required=True, help='Time step')
@@ -107,8 +115,11 @@ def parse_arguments() -> Dict[str, Any]:
                         help='number of training steps (0 => sim_time/dt); overrides sim_time')
     
     # Neural network parameters
-    parser.add_argument('--architecture', type=str, choices=['Combo', 'RPP'], default='Combo', 
-                        help='Architecture type')
+    parser.add_argument('--architecture', type=str, choices=['Combo', 'RPP', 'PlainCNN'], default='Combo',
+                        help="'Combo'/'RPP' = approximately-symmetric (Wilson nonlinearity + "
+                             "invariant block); 'PlainCNN' = unconstrained baseline, a plain "
+                             "stack of --channels_noninv masked-conv layers, NO Wilson step, "
+                             "NO invariant block -- no architectural symmetry at all")
     parser.add_argument('--channels_noninv', type=str, required=True, 
                         help='Comma-separated integers for non-invariant channels')
     parser.add_argument('--channels_inv', type=str, required=True,
@@ -201,6 +212,7 @@ def parse_arguments() -> Dict[str, Any]:
             'Jbond': 0.0,
             'h_f': 0.0,
             'dual_basis': False,
+            'ftc': False,
             'n_samples': 2**13,
             'n_chains': 2**10,  # Will be overridden by device detection
             'n_discard': 2**3,
@@ -271,6 +283,22 @@ def parse_arguments() -> Dict[str, Any]:
             "(--architecture Combo --symmetric_block cnn)"
         )
 
+    # Fermionic toric code: the dressed-star H still commutes with every A_v (same
+    # stabilizer group), so the Combo architecture, Wilson tokens, and vertex-flip
+    # sampler all apply unchanged. Kept mutually exclusive with the other Hamiltonian
+    # experiments (untested combinations, and h_f targets a different model). hy/Jy_p
+    # are ALSO excluded here (adversarial-audit finding, 2026-08-14): sigma^y
+    # anticommutes with the dressed star on its 2 shared (Y-type) links exactly like
+    # hx does on its bare-X links, so hy is a second, unvalidated fermionic cut -- not
+    # a benign combination -- and must go through the same scrutiny as hx (or be
+    # excluded) rather than silently training with dtype=complex and no ED companion.
+    if args.get('ftc', False):
+        assert not args.get('dual_basis', False) and args.get('h_f', 0.0) == 0.0 and \
+            args['Jy_v'] == 0.0 and args['hy'] == 0.0 and args['Jy_p'] == 0.0, (
+            "--ftc is incompatible with --dual_basis / --h_f / --Jy_v / --hy / --Jy_p "
+            "(hy/Jy_p anticommute with the dressed star same as hx -- unvalidated cut)"
+        )
+
     # --n_steps overrides sim_time (kept coupled so BOTH optimizer paths and the JSON
     # sim_params agree: n_iter is always derived as sim_time/dt).
     if args.get('n_steps', 0):
@@ -292,7 +320,17 @@ def parse_arguments() -> Dict[str, Any]:
     # real-encoder + complex-readout transformer (--tf_complex_output, handled first).
     if args.get('tf_complex_output', False) and args.get('symmetric_block', 'cnn') in ('transformer', 'full_transformer'):
         args['dtype'] = "float64"
-    elif args['hy'] != 0.0 or args['Jy_p'] != 0.0 or args['Jy_v'] != 0.0 or args.get('h_f', 0.0) != 0.0:
+    # The fermionic TC (--ftc) is real but non-stoquastic. Sign structure of the exact
+    # GS (scratchpad/validate_ftc.py + L=3 dense scans, 2026-08-07):
+    #   - h=0: GS == plain TC GS (same stabilizer group) => positive => float64.
+    #   - hz cut: hz preserves flux sectors and A'_v == A_v on the zero-flux sector,
+    #     so the fTC hz GS IS the TC hz GS (E0 equal to 1e-15 in ED) => float64.
+    #   - hx cut (the fermionic one): GS found sign-free at L=2/3 for hx in [0.1, 1.1]
+    #     despite the non-stoquastic H, but that is not yet a theorem at L=4 =>
+    #     keep the conservative complex path; flip to float64 if the L=4
+    #     `lanczos_ed --ftc` neg_amp_fraction comes back 0 across the sweep window.
+    elif args['hy'] != 0.0 or args['Jy_p'] != 0.0 or args['Jy_v'] != 0.0 or args.get('h_f', 0.0) != 0.0 \
+            or (args.get('ftc', False) and args['hx'] != 0.0):
         args['dtype'] = "complex"
     else:
         args['dtype'] = "float64"
@@ -349,7 +387,9 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "Av_mean": [],
             "Av_std": [],
             "Se_mean": [],
-            "Se_std": []
+            "Se_std": [],
+            "Avp_mean": [],
+            "Avp_std": []
         },
         "sim_params": {
             "kind": ["G-NonInv"],
@@ -363,6 +403,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "Jbond": [config["Jbond"]],
             "h_f": [config.get("h_f", 0.0)],
             "dual_basis": [config.get("dual_basis", False)],
+            "ftc": [config.get("ftc", False)],
             "BC": [config["bc"]],
             "n_chann_inv": config["channels_inv"],
             "n_chann_noninv": config["channels_noninv"],

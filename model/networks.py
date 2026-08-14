@@ -873,6 +873,21 @@ def create_model(config: Dict[str, Any], plaq_all: List[List[int]], kernel_manag
                 WilsonNonlinearity(plaq_all_tuple, rescale, dtype)
             ] + inv_sequence + [Final()]
 
+    elif architecture_type == "PlainCNN":
+        # Unconstrained baseline: a plain stack of the SAME local masked-conv blocks
+        # used in Combo's Block 1 -- NO WilsonNonlinearity, NO invariant (global-
+        # kernel) block, i.e. no architectural symmetry of any kind. Isolates
+        # whether exact stabilizer-symmetry embedding (not just raw CNN capacity)
+        # is what lets Combo handle a sign-problematic Hamiltonian. Depth/width
+        # via --channels_noninv (see scratchpad/param_count_ftc.py for a recipe
+        # roughly parameter-matched to Combo-small).
+        noninv_sequence = [
+            CNN_noninvariant(
+                repin, repout, kernel_manager, dtype
+            ) for repin, repout in zip(channels_noninvariant, channels_noninvariant[1:])
+        ]
+        sequence = noninv_sequence + [Final()]
+
     else:
         # RPP architecture
         conv_net_plaq = CNN_noninvariant_plaq(

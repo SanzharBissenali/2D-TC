@@ -363,6 +363,115 @@ Block-1's scaled sigmoid maps ±1→±1 EXACTLY at identity init) — enforced b
 - Pre-existing (flagged, NOT fixed): `MultiRule` off-by-one (`custom_sampler.py`,
   `maxval=n_clusters-1` ⇒ last cluster never proposed; ergodicity safe via single-flip rule).
 
+## Current work — fermionic toric code (branch `fermionic-toric-code`)
+`--ftc`: replace EVERY vertex star `A_v=XXXX` by the dressed `A'_v = A_v·B_NE(v)` (Chen–Kapustin–
+Radičević exact-bosonization Gauss law, arXiv:1711.00515 Eq. 9; identified via lit search — the
+user's stabilizer sketch matches CKR's NE-plaquette convention exactly). `XZ=−iY` on the 2 shared
+links (v's up+right) ⇒ string `−Y·Y·X..·Z..` with REAL −1 coefficient; built as plain
+`LocalOperator` products (X-links then Z-links) so the sign/Y bookkeeping is automatic and the
+operator stays float64. Boundary rule (user decision): vertices without an NE plaquette stay bare
+⇒ 9 dressed + 7 bare stars at L=4. Composes exactly with `--dual_basis` aliases but asserted off
+(untested); mutually exclusive with `h_f`/`Jy_v`.
+- **Physics (validated in `scratchpad/validate_ftc.py`, numpy-only, L=2/3 dense + L≤4 symbolic):**
+  same stabilizer group ⇒ unperturbed GS **= TC GS exactly** (positive, E0=−#stab=−25 at L=4;
+  identity-init Combo starts AT the GS ⇒ the h=0 run is a wiring test, V≈0 from step 0). BUT the
+  OBC relation `Π_v A'_v = Π_p B_p` ties m-parity to e-parity ⇒ single flux forbidden ⇒ **fTC gap
+  = 4 (paired excitations) vs TC 2**; spectra differ at h=0 ⇒ perturbed fTC needs its own ED
+  (`lanczos_ed --ftc`, files `ed_ftc_L4_*.json`; TC files NOT reusable — except see next).
+- **hz cut is EXACTLY the TC hz cut in the GS sector** (theorem, ED-verified to 1e-15 at L=2/3):
+  hz preserves flux sectors and `A'_v ≡ A_v` on the zero-flux sector ⇒ same E0(hz), same GS,
+  positive ⇒ existing `results/ed/` hz E0s DO apply to fTC E0 (not to gaps). No new physics there.
+- **hx is the fermionic cut** (proliferates ε = flux+bound-charge; fermions can't condense ⇒
+  expect non-Ising/1st-order — OPEN problem, no NQS/VMC literature): E0 genuinely differs
+  (fTC resists polarization, dE0 grows +0.06→+3.0 over hx=0.1→1.5 at L=3). SIGN STRUCTURE
+  SURPRISE: the fTC+hx GS is **sign-free at L=2/3 for the whole hx∈[0.1,1.5] scan** (through the
+  gap minimum ~2.35 at hx≈0.7, deep into the polarized phase) despite the non-stoquastic H. Not
+  yet a theorem at L=4 ⇒ config
+  keeps `dtype=complex` for ftc+hx only (hz stays float64 by the sector theorem); L=4
+  `lanczos_ed --ftc` records `neg_amp_fraction`/`neg_amp_weight` — if 0 across the window, flip
+  ftc+hx to float64 (kills the ~20 min/pt complex JIT).
+- **Code:** `geometry._generate_dressed_stars` → per-vertex `(x_links, z_links)`, shared links in
+  BOTH lists (one-line lookup: `dg_v.positions[v]` is positionally aligned with `vertex_all[v]`,
+  same alignment for `dg_p.positions`/`plaq_all`, so the NE-plaquette lookup is a single
+  `_mapping2Dto1D(dg_p.positions, dg_v.positions[v] + [1/2,1/2])`, empty ⇒ bare `A_v`; **written
+  and cross-checked bit-for-bit against the independent numpy reference at L=2/3/4**);
+  `hamiltonian.py` ftc branch in the vertex loop; `config.py` `--ftc` (+legacy-dict default,
+  sim_params record, dtype rule); `observables.calculate_dressed_star` → `Avp_mean/std` (ftc-gated
+  end-of-run in main.py; ≈1 at h=0 alongside Av/Bp); `lanczos_ed --ftc` + sign diagnostic;
+  `jobs/nersc_ftc.sh` (env-param HX_LIST/ARMS/DIAG_SHIFT/ED, SLURM array chunking over HX_LIST;
+  default=h=0 wiring run `-t 0:30`; ED companion inline). Sampler/architecture untouched (H still
+  commutes with every A_v; custom sampler is geometry-only — cluster moves stay exact symmetry
+  moves). NOTHING COMMITTED YET — all of the above sits uncommitted on the branch.
+- **Status (2026-08-14):** implementation complete, all local checks pass (`py_compile` clean;
+  `validate_ftc.py` ALL PASS; `_generate_dressed_stars` cross-checked against the reference).
+  NERSC cert renewed. Phase 3 (h=0 wiring) and Phase 4 (hx sweep + ED) not yet submitted — always
+  consult before `submit`.
+- **6-agent adversarial swarm (2026-08-14):** independently re-derived (fresh code, not reusing
+  `validate_ftc.py`) the dressed-star algebra against the user's original diagram AND the actual
+  CKR paper text (arXiv:1711.00515 Eq. 9/4/12, incl. resolving an operator-order sign subtlety —
+  CKR write face-then-star, this repo star-then-face; verified by direct matrix computation that
+  the two shared anticommuting pairs give `(-1)²=+1` either way) — **PASS, no discrepancy**.
+  End-to-end wiring (geometry→hamiltonian→main→observables) — **PASS** on 6/7 items. PlainCNN
+  param counts (1681 vs 1800) — **independently confirmed**. **Two real bugs found and FIXED**:
+  (1) `--ftc` exclusivity assert (`config.py` + `hamiltonian.py`) didn't block `hy`/`Jy_p`, even
+  though `hy` anticommutes with the dressed star on its 2 shared links exactly like `hx` does —
+  a second unvalidated fermionic cut that was silently training with no ED companion; now
+  excluded alongside `dual_basis`/`h_f`/`Jy_v`. (2) `hamiltonian.py`'s `ftc` branch had no `-1`
+  filter on `z_links` (dormant today — OBC plaquettes never carry `-1` — but structurally
+  inconsistent with the `x_links`/plain-plaquette loops elsewhere); added, plus a per-entry
+  shape assert on `dressed_stars`. **Noted, not fixed (pre-existing, unrelated to this session):**
+  the legacy `sys.argv<=12` positional-args path in `config.py` is missing an `'Lx'` default and
+  is dead code at HEAD — no current job script exercises it.
+
+## Current work — architecture comparison: does exact symmetry beat the fTC sign problem?
+User's framing: fTC is sign-problem-full by construction (non-stoquastic `A'_v`); user's
+hypothesis is that BOTH architectures may fail even at the **fixed point h=0** (no field at all)
+— that itself is the current test, not a field sweep (explicitly ruled out: "no need for any hx
+sweep"). Plan: run TWO architectures at h=0, L=4, same optimizer/sampler hyperparameters (dt/ds/
+steps/tdvp/custom-sampler identical across arms — architecture is the only variable).
+- **Arm `cnn`:** Combo-small (`channels_noninv 1,16`, `channels_inv 16,8,1`). Identity-init means
+  it starts AT the exact GS (E0=-25) by construction — this run is really a wiring check; a
+  deviation from -25 would indicate a bug, not a genuine architecture failure.
+- **Arm `plaincnn` (NEW):** `--architecture PlainCNN` (`model/networks.py` `create_model`, new
+  branch alongside Combo/RPP) — a genuinely unconstrained baseline: a plain stack of the SAME
+  local masked-conv `CNN_noninvariant` blocks Combo's Block 1 uses, but with **no
+  WilsonNonlinearity and no invariant block** — no architectural symmetry of any kind. Must find
+  the GS from a generic init via VMC alone in the same step budget as `cnn` — this IS the actual
+  test of the user's hypothesis. Both arms and RPP previously had **no non-symmetric option in
+  this repo** before this session.
+- **kernel_size clarified (2026-08-14): TWO DIFFERENT kernels, not one.** Block 1
+  (`CNN_noninvariant`, the `--kernel_size` flag) is the LOCAL nearest-neighbor kernel — stays 2
+  for every L, both arms. Block 3 (`CNN_invariant`, `kernel_size_inv`) is the GLOBAL kernel and
+  was ALREADY auto-set to `Lx-1` per L in `config.py`, unrelated to Block 1 — no change needed
+  there, it already matches the paper. (A same-session detour briefly set Block 1's kernel_size
+  to `Lx-1` too, on a misreading of "kernel_size = L-1 for all the runs" as referring to Block 1;
+  reverted — that phrase meant Block 3's per-L global kernel, which the repo already implements.)
+- **Params, confirmed at kernel_size=2 (Block 1) / kernel_size_inv=Lx-1 (Block 3):** **cnn = 1681**
+  (Block1 448 + Block3 1233). **plaincnn = `channels_noninv 1,8,6,2` → ~1800** (224+1260+316,
+  matched-generous vs cnn, not starved). Note "1233" is Block 3 ALONE, not the network total —
+  verified by re-deriving `CNN_noninvariant`/`CNN_invariant`'s exact `self.param` shapes from
+  `KernelManager`; masking in `mask_kernel` zeroes boundary taps at call time, it does NOT shrink
+  the stored parameter shape, so param count is boundary-independent.
+- **wandb:** `utils/wandb_logger._tags` now also tags `architecture`, `hx`, and `ftc` (previously
+  only `Lx`/`symmetric_block`/`hz`/`hy` — insufficient to slice this comparison on the dashboard).
+- **Analysis:** `scripts/ftc_summary.py` (new, stdlib-only) — per-`(Lx,hx,hz)` table, both arms
+  side by side, vs `ed_ftc_L4_*.json` (E0/gap/sign diagnostics), tail energy-std as a convergence
+  signal, and a closing section quantifying the rel-err gap between arms. Deliberately **no KILL
+  constant** (unlike `erel_table.py`) — this experiment expects and wants to measure failure, not
+  gate on it. Verified against a synthetic fixture. At h=0, `E0=-25` is the ED reference (already
+  in `results/ed/ed_L4_hx0.00_hz0.00.json` — no new ED point needed for this phase).
+- **hx sweep is explicitly DEFERRED**, not part of the current plan — kept in `jobs/nersc_ftc.sh`
+  as a documented Phase-4 option only (`{0.10, 0.30, 0.50, 0.70}`, matching the L=3 dense-scan's
+  gap minimum window) in case the h=0 fixed-point result motivates it later.
+- **Future work flagged by the user:** once both arms are shown to fall short of ED (including
+  possibly at h=0), a planned follow-up experiment adds an **analytic sign-head** component to the
+  architecture (design not yet specified — to be communicated in a later session/message) and
+  re-tests. Treat that as Phase 5, gated on this comparison's results landing first.
+- **Status (2026-08-14):** both arms implemented + compile-clean, kernel_size corrected to `Lx-1`
+  for both; job script updated (`plaincnn` arm, dynamic `KSIZE`, SLURM array chunking kept for
+  Phase 4 only); analysis script ready. Nothing submitted — job spec pending user consult (per
+  the cluster safeguard below).
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

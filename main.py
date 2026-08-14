@@ -30,7 +30,8 @@ from simulation.observables import (
     create_wilson_loop_callback, create_magnetization_callback,
     create_renyi_callback, create_2point_callback, create_conditional_callbacks,
     create_plaquette_stabilizer_callback, create_vertex_stabilizer_callback,
-    create_Se_callback, check_Av_invariance, check_Bp_invariance, dump_attention
+    create_Se_callback, create_dressed_star_callback,
+    check_Av_invariance, check_Bp_invariance, dump_attention
 )
 from utils.config import setup_environment, parse_arguments, create_data_dict, save_data
 from utils.io import save_model, log_runtime, record_experiment_info
@@ -89,6 +90,8 @@ def main():
         h_f=config.get('h_f', 0.0),
         fermion_pairs=geometry.fermion_pairs,
         dual_basis=config.get('dual_basis', False),
+        ftc=config.get('ftc', False),
+        dressed_stars=geometry.dressed_stars,
         dtype=config['dtype']
     )
     
@@ -242,6 +245,12 @@ def main():
     # Final fermionic (dyon) order parameter <S_e> = <X_a.Z_b>
     callback = create_Se_callback(geometry)
     callback(vs, -1, -1, config)
+
+    # Fermionic TC: final dressed-star <A'_v> = <A_v * B_NE(v)> (the model's actual
+    # vertex-sector stabilizers; ~1 at h=0 alongside <A_v> and <B_p>)
+    if config.get('ftc', False):
+        callback = create_dressed_star_callback(geometry)
+        callback(vs, -1, -1, config)
 
     # Attention interpretability dump: gamma ranges + alpha tables (full_transformer),
     # or the per-(layer, head) content-gate alpha_h (plaquette_transformer / variant1).

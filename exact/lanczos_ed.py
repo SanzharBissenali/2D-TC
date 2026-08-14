@@ -30,8 +30,10 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
-def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True):
+def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False):
     """Diagonalize the toric-code Hamiltonian and return a results dict."""
+    # ftc dressed stars are real (even Y count: X.Z = -i*sigma_y on the two shared
+    # links, (-i)^2 = -1), so the operator stays float64 like the plain TC.
     dtype = "complex" if hy != 0.0 else "float64"
     geometry = ToricCodeGeometry(Lx, Lx, bc)
     hi = nk.hilbert.Spin(s=1 / 2, N=geometry.N)
@@ -42,6 +44,8 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True):
         plaq_all=geometry.plaq_all,
         bonds=geometry.bonds,
         hx=hx, hy=hy, hz=hz, J=J,
+        ftc=ftc,
+        dressed_stars=geometry.dressed_stars,
         dtype=dtype,
     )
 
@@ -57,12 +61,23 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True):
 
     result = {
         "Lx": Lx, "N": geometry.N, "bc": bc,
-        "hx": hx, "hy": hy, "hz": hz, "J": J, "dtype": dtype,
+        "hx": hx, "hy": hy, "hz": hz, "J": J, "ftc": ftc, "dtype": dtype,
         "energies": [float(e) for e in np.real(evals)],
         "E0": float(np.real(evals[0])),
         "gap": float(np.real(evals[1] - evals[0])) if len(evals) > 1 else None,
         "ed_time_s": ed_time,
     }
+
+    # Sign-structure diagnostic for real Hamiltonians: fraction of negative GS
+    # amplitudes (global phase fixed by the largest-|amplitude| component) and the
+    # weight they carry. 0 => positive/stoquastic-representable state (plain float64
+    # Combo suffices); finite => signful GS (needs the complex ansatz). This is the
+    # decisive check for the non-stoquastic ftc under hx/hz perturbations.
+    if psi0 is not None and dtype == "float64":
+        v = np.real(psi0) * np.sign(np.real(psi0[np.argmax(np.abs(psi0))]))
+        cut = 1e-12 * np.max(np.abs(v))
+        result["neg_amp_fraction"] = float(np.mean(v < -cut))
+        result["neg_amp_weight"] = float(np.sum(v[v < -cut] ** 2))
 
     if observables and psi0 is not None:
         sz = [_expect(psi0, nk.operator.spin.sigmaz(hi, j).to_sparse()) for j in range(geometry.N)]
@@ -90,6 +105,8 @@ def main():
     p.add_argument("--J", type=float, default=1.0)
     p.add_argument("--bc", choices=["OBC", "PBC"], default="OBC")
     p.add_argument("--k", type=int, default=4, help="number of lowest eigenvalues")
+    p.add_argument("--ftc", action="store_true",
+                   help="fermionic toric code: dressed stars A'_v = A_v * B_NE(v)")
     p.add_argument("--no-observables", action="store_true",
                    help="skip per-site magnetizations (energies only)")
     p.add_argument("--out", type=str, default=None, help="output JSON path")
@@ -98,6 +115,7 @@ def main():
     result = run_ed(
         Lx=args.Lx, hx=args.hx, hz=args.hz, hy=args.hy, J=args.J,
         bc=args.bc, k=args.k, observables=not args.no_observables,
+        ftc=args.ftc,
     )
 
     print(json.dumps({k: v for k, v in result.items()

@@ -22,6 +22,8 @@ def create_hamiltonian(
     h_f: float = 0.0,
     fermion_pairs: Optional[List[List[int]]] = None,
     dual_basis: bool = False,
+    ftc: bool = False,
+    dressed_stars: Optional[List[Tuple[List[int], List[int]]]] = None,
     dtype: Any = complex
 ) -> nk.operator.AbstractOperator:
     """
@@ -45,6 +47,18 @@ def create_hamiltonian(
             everywhere): H_dual = W H W with W = H_2^(x)N. Stars become Z-products
             (diagonal), plaquettes X-products, hx -> sigma_z field, hz -> sigma_x.
             Same spectrum as H (unitary), so ED references are unchanged.
+        ftc: fermionic toric code (Chen-Kapustin-Radicevic bosonization Gauss law,
+            arXiv:1711.00515 Eq. 9). Replaces each vertex star A_v = XXXX by the
+            dressed A'_v = A_v * B_NE(v): sigma_x on the star links times sigma_z on
+            the NE-plaquette links. On the two shared links (v's up/right) the
+            same-site product X.Z = -i*sigma_y makes A'_v = -Y.Y.X.X.Z.Z - a REAL
+            but non-stoquastic operator (even Y count), so dtype stays float64.
+            Same stabilizer group as the plain TC (A'_v * B_NE = A_v), hence the
+            unperturbed ground state and E0 = -(#stars + #plaquettes) are unchanged;
+            the fermionic character enters the excitations and perturbed response.
+            Boundary rule: vertices without an NE plaquette keep the bare A_v.
+        dressed_stars: per-vertex (x_links, z_links) from
+            geometry._generate_dressed_stars(); required when ftc=True.
         dtype: Data type for the Hamiltonian
 
     Returns:
@@ -72,15 +86,45 @@ def create_hamiltonian(
     if hy != 0 or Jy_v != 0 or Jy_p != 0:
         dtype = "complex"
 
+    if ftc:
+        assert h_f == 0 and Jy_v == 0 and hy == 0 and Jy_p == 0, (
+            "ftc: the dressed-star model is defined with the plain plaquette term and "
+            "hx/hz field perturbations only; h_f / Jy_v / hy / Jy_p are out of scope "
+            "(hy anticommutes with the dressed star same as hx -- unvalidated cut)"
+        )
+        assert dressed_stars is not None and len(dressed_stars) == len(vertex_all), (
+            "ftc=True requires geometry.dressed_stars (one (x_links, z_links) entry "
+            "per vertex) - fill in geometry._generate_dressed_stars()"
+        )
+        assert all(len(entry) == 2 for entry in dressed_stars), (
+            "ftc: every geometry.dressed_stars entry must be an (x_links, z_links) pair"
+        )
+
     # Add vertex terms
     for v in range(0, len(vertex_all)):
+        if ftc:
+            # Dressed star A'_v = A_v * B_NE(v). The x_links/z_links overlap on the
+            # vertex's up/right links yields X.Z = -i*sigma_y per shared site, so the
+            # -Y.Y.X.X.Z.Z string (and its -1) emerges from plain operator products.
+            # Under dual_basis the aliases give (Z-star)(X-plaq) = W A'_v W exactly.
+            x_links, z_links = dressed_stars[v]
+            op = 1
+            for j in x_links:
+                if j != -1:
+                    op *= _sx(hi, j, dtype=dtype)
+            for j in z_links:
+                if j != -1:
+                    op *= _sz(hi, j, dtype=dtype)
+            H += -J * op
+            continue
+
         # XXXX vertex terms
         op = 1
         for j in range(0, len(vertex_all[v])):
             if vertex_all[v][j] != -1:
                 op *= _sx(hi, vertex_all[v][j], dtype=dtype)
         H += -J * op
-        
+
         # YYYY vertex terms
         if Jy_v != 0:
             assert dtype == "complex", "YYYY vertex terms require complex Hamiltonian"

@@ -55,11 +55,16 @@ def _tags(config):
     """Tags let you slice the dashboard by arm / size / field without parsing names."""
     tags = [
         f"L{config.get('Lx')}",
+        config.get("architecture", "Combo"),
         config.get("symmetric_block", "cnn"),
         f"hz{config.get('hz')}",
     ]
     if config.get("hy"):
         tags.append(f"hy{config.get('hy')}")
+    if config.get("hx"):
+        tags.append(f"hx{config.get('hx')}")
+    if config.get("ftc"):
+        tags.append("ftc")
     return tags
 
 

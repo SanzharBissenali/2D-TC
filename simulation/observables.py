@@ -675,6 +675,57 @@ def create_vertex_stabilizer_callback(geometry) -> Callable:
     return vertex_callback
 
 
+def calculate_dressed_star(
+    vstate: nk.vqs.VariationalState,
+    geometry,
+    dual: bool = False
+) -> Tuple[float, float]:
+    """Mean and std of the dressed-star expectations <A'_v> (fermionic TC, --ftc).
+
+    A'_v = A_v * B_NE(v): sigma_x on the star links times sigma_z on the NE-plaquette
+    links; the same-site X.Z overlap on the vertex's up/right links gives the two
+    sigma_y factors and the -1 automatically (same construction as hamiltonian.py).
+    Vertices without an NE plaquette contribute their bare A_v (z_links == []), so
+    the mean runs over the model's actual 16 vertex-sector stabilizers at L=4 and
+    must sit at ~1 in the unperturbed ground state, degrading under a field.
+    Contamination check alongside <A_v> and <B_p> (all three ~1 at h=0).
+
+    Returns (Avp_mean, Avp_std) over all vertices.
+    """
+    hi = vstate.hilbert
+    _sa = nk.operator.spin.sigmaz if dual else nk.operator.spin.sigmax
+    _sb = nk.operator.spin.sigmax if dual else nk.operator.spin.sigmaz
+    vals = []
+    for (x_links, z_links) in geometry.dressed_stars:
+        op = 1
+        for j in x_links:
+            op = op * _sa(hi, j)
+        for j in z_links:
+            op = op * _sb(hi, j)
+        vals.append(vstate.expect(op).mean)
+    vals = np.array([float(np.real(v)) for v in vals])
+    return float(vals.mean()), float(vals.std())
+
+
+def create_dressed_star_callback(geometry) -> Callable:
+    """Callback logging <A'_v> mean/std (dressed stars, --ftc). No internal step
+    guard so an explicit end-of-run call always runs."""
+    def dressed_star_callback(vstate: nk.vqs.VariationalState, step: int, time: float, config: Dict[str, Any]) -> None:
+        Avp_mean, Avp_std = calculate_dressed_star(
+            vstate, geometry, dual=bool(config.get('dual_basis', False)))
+
+        with open(config['filename'], 'r') as f:
+            data = json.load(f)
+
+        data["order_params"]["Avp_mean"].append(Avp_mean)
+        data["order_params"]["Avp_std"].append(Avp_std)
+
+        with open(config['filename'], 'w') as f:
+            json.dump(data, f)
+
+    return dressed_star_callback
+
+
 def _check_flip_invariance(model, params, N, clusters, n_configs: int = 8) -> float:
     """Max |Delta log psi| over configs x clusters when flipping each cluster's spins.
 

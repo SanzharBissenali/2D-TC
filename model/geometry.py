@@ -57,6 +57,9 @@ class ToricCodeGeometry:
         # Generate fermionic (dyon) hopping pairs for the S_e = X_a.Z_b field
         self.fermion_pairs = self._generate_fermion_pairs()
         self.Nfermion = len(self.fermion_pairs)
+
+        # Dressed stars A'_v = A_v * B_NE(v) for the fermionic toric code (--ftc)
+        self.dressed_stars = self._generate_dressed_stars()
         
         # Extract non-boundary vertex stabilizers
         self.vertex_bulk_hetero, self.vertex_edge_hetero = self._separate_vertex_stabilizers()
@@ -188,6 +191,35 @@ class ToricCodeGeometry:
             x_link, z_link = p, j  # Z on source link j, X on the +[1/2,1/2] partner
             pairs.append([x_link, z_link])
         return pairs
+
+    def _generate_dressed_stars(self) -> List[Tuple[List[int], List[int]]]:
+        """Dressed vertex stabilizers A'_v = A_v * B_NE(v) for the fermionic toric code.
+
+        Each entry corresponds positionally to vertex_all / dg_v.positions and is a
+        pair (x_links, z_links) consumed by hamiltonian.create_hamiltonian(ftc=True):
+          - x_links: the star links of v (vertex_all[v] with the -1 sentinels removed)
+          - z_links: the 4 links of the plaquette diagonally up-right (north-east) of
+            v, i.e. plaq_all[p] for the plaquette centered at position(v) + [1/2, 1/2];
+            [] when that plaquette falls off the OBC boundary (bare star, chosen
+            boundary rule: top row / right column vertices stay plain A_v = XX(XX)).
+
+        The vertex's up and right links are SHARED between the star and the NE
+        plaquette and must appear in BOTH lists: the Hamiltonian multiplies
+        sigma_x * sigma_z on those sites, giving -i*sigma_y each, so the dressed
+        operator -Y.Y.X.X.Z.Z (with its (-i)^2 = -1) emerges with no explicit sign
+        bookkeeping. Counts at L=4: 9 dressed stars (one per plaquette) + 7 bare;
+        the corner vertex (0,0) is fully shared (star = {up, right} only), so its
+        dressed operator is a 4-body -Y.Y.Z.Z. Cross-check against the independent
+        numpy reference in scratchpad/validate_ftc.py.
+        """
+        dressed = []
+        for v in range(len(self.vertex_all)):
+            x_links = [j for j in self.vertex_all[v] if j != -1]
+            ne_pos = self.dg_v.positions[v] + np.array([1 / 2, 1 / 2])
+            hit = self._mapping2Dto1D(self.dg_p.positions, ne_pos)
+            z_links = self.plaq_all[hit[0][0]] if len(hit) > 0 else []
+            dressed.append((x_links, z_links))
+        return dressed
 
     def _separate_vertex_stabilizers(self) -> Tuple[List[List[int]], List[List[int]]]:
         """Separate vertex stabilizers into bulk and edge operators."""
