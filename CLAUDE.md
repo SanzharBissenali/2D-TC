@@ -463,6 +463,59 @@ steps/tdvp/custom-sampler identical across arms — architecture is the only var
 - **hx sweep is explicitly DEFERRED**, not part of the current plan — kept in `jobs/nersc_ftc.sh`
   as a documented Phase-4 option only (`{0.10, 0.30, 0.50, 0.70}`, matching the L=3 dense-scan's
   gap minimum window) in case the h=0 fixed-point result motivates it later.
+- **RESULT (2026-08-14, L=4, h=0 fixed point, job 56952508): user's hypothesis CONFIRMED.**
+  `cnn`: E=-25.000000 (median-tail rel-err **1.47e-08**, essentially machine precision, from step
+  1 — the wiring check). `plaincnn`: E≈-23.45 (rel-err **6.22e-02**, V-score ~1.4, i.e. **not
+  converged** — a ratio of >4,000,000x worse than `cnn`). Crucially, `plaincnn`'s training was
+  **stable, not broken** (no NaN/divergence, small per-step energy std ~0.05-0.07) — the
+  unconstrained architecture genuinely cannot find the topologically-ordered ground state via VMC
+  from a generic init in 350 steps, even at the trivial h=0 point where the answer is a fixed
+  stabilizer state. Diagnostic breakdown for `plaincnn`: `Av_mean≈0.9996` (close to 1 — the plain
+  vertex-star structure is partially captured) but `Bp_mean≈0.913` and `Avp_mean≈0.951` (both
+  degraded) and `magnetization_Xmean` is O(0.1-0.16) per-site (should be ~0 at h=0) — the network
+  has drifted toward some partially-polarized non-topological state rather than the true GS.
+  Real `--ftc` ED companion (`ed_ftc_L4_hx0.00_hz0.00.json`, actual pipeline, not a hand
+  derivation): `E0=-25.000000000000018, gap=3.9999999999999574, neg_amp_fraction=0.0` — matches
+  every adversarial-swarm prediction exactly. Synced: wandb project `2d-tc` (7 runs pushed via
+  `wandb-sync`), results committed+pulled via `cluster.sh fetch`.
+- **OPEN PHYSICS PUZZLE (2026-08-14, found via cross-session collaboration with the 3D fTC repo
+  `toric-code-nqs-bf`): the hx-cut is positive despite being genuinely, un-fixably frustrated —
+  not just non-stoquastic-looking.** At L=2, `H` has a real positive off-diagonal element
+  (config 0001↔1101, traced to `A'_0`); the 3-cycle {0000,0100,1000} has edges (-1,-1,+1) — an
+  ODD count of positive edges, an unfixable frustrated triangle in the signed-graph sense
+  (Harary balance). **Exhaustively verified** (brute force over all 2^16 diagonal ±1 gauges at
+  L=2, not a heuristic): NO diagonal gauge exists making H entrywise non-positive off-diagonal —
+  i.e. this is provably NOT gauge-equivalent to a stoquastic Hamiltonian (unlike, e.g., the
+  standard Marshall-sign-rule case). The frustrated configs carry substantial GS weight
+  (|ψ[0100]|=|ψ[1000]|=0.186 vs max|ψ|=0.301 at hx=1.0 — not a corner the GS avoids) YET the GS
+  is still exactly positive (`neg_amp_fraction=0.0`, confirmed L=2 AND L=3, hx∈{0.1,0.5,1.0}).
+  **No explanation yet** — some mechanism other than stoquastic-gauge-equivalence is enforcing
+  positivity. **(b) resolved: frustration DOES persist at L=3** (peer session found a concrete
+  frustrated cycle there too, same structural signature, different location). **Analytic
+  mechanism for which edges can even be positive (derived this session, stronger than pattern-
+  matching):** every off-diagonal H entry comes from an X-flip (Z is diagonal). Bare-star and
+  hx-field terms are pure X-products ⇒ their matrix element is unconditionally +1 ⇒ contribute
+  -J/-hx, ALWAYS negative, no config-dependence. Dressed stars are built X-content-then-Z-content
+  (`hamiltonian.py`'s ftc branch order) ⇒ acting on |config⟩ the Z-content evaluates FIRST, on
+  the PRE-flip config, giving the NE-plaquette's flux eigenvalue (±1, config-dependent) ⇒ the
+  edge sign is exactly `-[pre-flip flux eigenvalue]`. **Conclusion: only dressed-star edges can
+  ever be positive — bare/field edges cannot, by construction, ever contribute a positive sign.**
+  So any frustrated cycle necessarily involves ≥1 dressed-star edge — **exhaustively confirmed by
+  the peer session** (per-term-tagged matrices, zero exceptions: at L=2, 8/8 positive entries
+  touch a dressed star; at L=3, 8192/8192 positive entries touch a dressed star; bare/field
+  entries are exactly +1 at every connected pair, 100% of the time, both sizes). Still open:
+  (a) what non-gauge mechanism forces positivity despite this proven frustration; (c) whether
+  this is documented in the bosonization/sign-problem literature for this construction class. **Practical fork (2026-08-14): peer session
+  recommends a real-valued (float64) ansatz should suffice for Phase 4 given the L=2/L=3
+  evidence — NOT yet acted on.** Our own documented criterion was always "confirm
+  `neg_amp_fraction=0` at L=4 itself before trusting float64 there" (L=4 is a different sector-
+  counting regime, not just bigger); the cheap fix is running ONE `--ftc` ED point at hx>0, L=4
+  (~5-10 min, real dtype) before Phase 4 — proposed as the next step, needs user consult/approval
+  before submitting (per the cluster safeguard) like any NERSC job. This reframes the earlier
+  "sign structure surprise" note below —
+  it is NOT merely non-stoquastic-but-lucky, it is a proven-frustrated Hamiltonian with a
+  positive ground state, a stronger and more specific claim. Follow up if/when the peer session
+  reports back on the L=3 frustration check.
 - **Future work flagged by the user:** once both arms are shown to fall short of ED (including
   possibly at h=0), a planned follow-up experiment adds an **analytic sign-head** component to the
   architecture (design not yet specified — to be communicated in a later session/message) and
