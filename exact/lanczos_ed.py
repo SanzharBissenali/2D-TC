@@ -50,8 +50,12 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
     )
 
     t0 = time.time()
-    # k>=2 lets us see the low-lying gap; eigenvectors needed for observables.
-    if observables:
+    # Eigenvectors are needed for observables AND for the real-dtype sign/amplitude
+    # diagnostics below, so --no-observables only skips the (expensive) per-site
+    # operator pass, not the eigenvector. Complex --no-observables keeps the old
+    # memory-lean path (that combination exists because of OOM on shared nodes).
+    want_vec = observables or dtype == "float64"
+    if want_vec:
         evals, evecs = nk.exact.lanczos_ed(H, k=max(k, 1), compute_eigenvectors=True)
         psi0 = np.asarray(evecs[:, 0])
     else:
@@ -75,9 +79,27 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
     # decisive check for the non-stoquastic ftc under hx/hz perturbations.
     if psi0 is not None and dtype == "float64":
         v = np.real(psi0) * np.sign(np.real(psi0[np.argmax(np.abs(psi0))]))
-        cut = 1e-12 * np.max(np.abs(v))
+        scale = np.max(np.abs(v))
+        cut = 1e-12 * scale
         result["neg_amp_fraction"] = float(np.mean(v < -cut))
         result["neg_amp_weight"] = float(np.sum(v[v < -cut] ** 2))
+        # Amplitude-DISTRIBUTION diagnostic (stronger than the sign check): at a
+        # stabilizer fixed point the GS should be 0 or one identical value on every
+        # Z-basis string (uniform superposition over the star-group orbit), i.e.
+        # n_nonzero a power of 2, amp_rel_spread ~ machine eps, one entry in
+        # amp_values_scaled. The signed histogram (normalized by max|amp|) is the
+        # compact payload for plotting at L=4 without shipping the 2^24 vector.
+        nz = v[np.abs(v) > cut]
+        mags = np.abs(nz)
+        result["n_nonzero"] = int(nz.size)
+        result["amp_rel_spread"] = float((mags.max() - mags.min()) / mags.mean())
+        vals, counts = np.unique(np.round(nz / scale, 9), return_counts=True)
+        top = np.argsort(-counts)[:8]
+        result["amp_values_scaled"] = [[float(vals[i]), int(counts[i])] for i in top]
+        result["amp_n_distinct"] = int(len(vals))
+        hist, edges = np.histogram(v / scale, bins=400, range=(-1.0, 1.0))
+        result["amp_hist_counts"] = hist.tolist()
+        result["amp_hist_edges"] = edges.tolist()
 
     if observables and psi0 is not None:
         sz = [_expect(psi0, nk.operator.spin.sigmaz(hi, j).to_sparse()) for j in range(geometry.N)]
