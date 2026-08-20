@@ -525,6 +525,72 @@ steps/tdvp/custom-sampler identical across arms — architecture is the only var
   Phase 4 only); analysis script ready. Nothing submitted — job spec pending user consult (per
   the cluster safeguard below).
 
+## Current work — doubled semion vs toric code (branch `doubled-semion`)
+North star: validate a sign-aware approximately-symmetric NQS for the 3D fermionic TC
+(peer repo `toric-code-nqs-bf`); the 2D doubled semion (DS) is the stepping stone with
+real ED reach. Plan: show the Kufel-style positive/approx-symmetric ansatz nails the
+honeycomb TC but FAILS the DS — failure is a THEOREM, not an expectation (Hastings
+arXiv:1506.08883: no non-negative representation of the DS GS in any local product
+basis; cite Shackleton 2509.03708 as the counterpoint — the claim is wavefunction
+non-positivity, NOT "no sign-free QMC"). Literature scan found NO existing NQS/VMC
+study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DONE) →
+2 NQS arms → 3 fixed-point experiment (+3b field sweeps) → 4 sign-aware architecture
+(user designs it; explicitly NOT the peer repo's quadratic head).
+- **Paper identity gotcha:** arXiv:1202.3120 = Levin–Gu, "Braiding statistics approach
+  to SPT phases" (both models in §IV via gauging the Z2 paramagnet). The 3D
+  generalization paper is von Keyserlingk–Burnell–Simon arXiv:1208.5128.
+- **Locked conventions (user-approved):** honeycomb, spins on links, Levin–Gu form:
+  vertex Q_v = ∏Z (the diagonal family ⇒ Phase-2 Wilson tokens), plaquette = X-flip.
+  H_TC = −ΣQ_v − ΣX_hex − hxΣσˣ − hzΣσᶻ (paper's TC plaquette projector OMITTED —
+  GS-sector identical since [X_hex,Q_v]=0; only charge-excited sectors differ;
+  documented in the builder docstring). H_DS = −ΣQ_v **+** Σ X_hex·D_p·P_p − fields,
+  D_p = ∏_{existing legs} i^{(1−σᶻ)/2}, P_p = ∏_{6 verts}(1+Q_v)/2. Ŝ_pP_p is
+  Hermitian on the FULL space (P_p forces even down-leg parity ⇒ D real), order-
+  insensitive, all terms commute; H has {0,±1} matrix elements ⇒ EXACTLY real ⇒
+  float64 everywhere (no complex-JIT tax).
+- **Smooth OBC (user decision; PBC rejected — OBC is the repo's NQS playground):**
+  patch = Lx×Ly COMPLETE hexagons, staggered brick rows (bottom-left corners
+  hx=(hy%2)+2i). Plaquettes never truncated; vertex terms 2-body at the boundary; legs
+  truncated. Loops stay closed at degree-2 boundary vertices ⇒ (−1)^{#loops} well-
+  defined; ∏_v Q_v = 1 is the single stabilizer relation ⇒ unique GS. Counting:
+  F=LxLy, N=3F+2(Lx+Ly)−1, V=2(F+Lx+Ly), E0=−(V+F), gap 2, GS support = 2^F closed-
+  loop configs, DS amplitudes = (−1)^{#loops}; DS neg-frac 0.5/0.75/0.75/0.875 at
+  1×1/2×1(=1×2)/3×1/2×2. ED ladder: 6/11/16/19 qubits local (throwaway venv), 2×3=27
+  on NERSC (deferred to Phase 3).
+- **Code (Phase 1):** `model/honeycomb_geometry.py` (brick-wall tables: vertex_all V×3
+  slots [left-h, right-h, vertical] −1-padded; plaq_all F×6 always full; legs_all /
+  plaq_vertices F×6 slot-aligned CCW from bottom-left; link_endpoints; construction-
+  time consistency net incl. coordinate slot-semantics and pairwise shared-edge ≤ 1).
+  `create_honeycomb_hamiltonian` (hamiltonian.py) — PauliStrings algebra ONLY: netket
+  operator products use `@` (not `*`), and a 12-site LocalOperator product OOMs on
+  dense 4096² blocks; ≤2^10 nonzero strings per DS plaquette after netket pruning;
+  weight reality comes from the T↔T^c corner-subset pairing (NOT even-Y-count — the
+  leg factors (1±i)/2 are complex), asserted then cast float64. `lanczos_ed --lattice
+  honeycomb --model {tc,ds} --Ly` (all-up-config sign anchor — the argmax anchor is
+  tie-ambiguous at h=0 and can report 1−f; new `neg_amp_fraction_support` key; square
+  path byte-identical; ds-on-square guarded). config.py flags + exclusivity asserts
+  (honeycomb: OBC-only, no dual_basis/ftc/h_f/hy/Jy/Jbond/custom-sampler; ds ⇒
+  honeycomb); main.py hard-guards honeycomb right after parse (ED-only until Phase 2).
+  wandb `_tags` += lattice/model.
+- **Validation (2026-08-20, all green):** two independent implementation lanes
+  (production netket vs from-scratch numpy) reconciled 14/14 at ~1e-13 incl. perturbed
+  (hx,hz) points and all sign fractions; 6-agent adversarial swarm found ZERO physics
+  discrepancies — entrywise dense equality vs fresh independent derivations (24
+  matrices incl. non-unit J and fields), reality mechanism re-proven, loop counts
+  independently reproduced; all swarm findings (ds-mislabel guard, main.py guard,
+  docstring corrections, _validate hardening, wandb tags) fixed same-day. Physics:
+  TC and DS spectra are IDENTICAL under pure hz on simply-connected patches (hz
+  preserves vertex sectors) — **hx is the discriminating axis** (1×2, hx=0.1: DS
+  −12.0203 vs TC −12.0275; the projectors resist charge creation).
+- **Pending:** user writes `exact/loops.py:count_loops` (stub + expected-value harness
+  ready; independent validator/swarm counters must agree with it); end-of-phase
+  lattice diagram artifact = the user sign-off gate for Phase 2. Session validator
+  artifacts (validate_honeycomb.py, honeycomb_reference_values.json,
+  reconcile_phase1.py) live in the session scratchpad.
+- Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
+  positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
+  pass full flag sets.
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the

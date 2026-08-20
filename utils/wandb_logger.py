@@ -65,6 +65,9 @@ def _tags(config):
         tags.append(f"hx{config.get('hx')}")
     if config.get("ftc"):
         tags.append("ftc")
+    if config.get("lattice", "square") != "square":
+        tags.append(config.get("lattice"))
+        tags.append(config.get("model", "tc"))
     return tags
 
 

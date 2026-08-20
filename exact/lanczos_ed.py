@@ -22,7 +22,8 @@ import numpy as np
 import netket as nk
 
 from model.geometry import ToricCodeGeometry
-from model.hamiltonian import create_hamiltonian
+from model.hamiltonian import create_hamiltonian, create_honeycomb_hamiltonian
+from model.honeycomb_geometry import HoneycombGeometry
 
 
 def _expect(psi, sparse_op):
@@ -30,24 +31,49 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
-def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False):
+def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False,
+           lattice="square", model="tc", Ly=0):
     """Diagonalize the toric-code Hamiltonian and return a results dict."""
-    # ftc dressed stars are real (even Y count: X.Z = -i*sigma_y on the two shared
-    # links, (-i)^2 = -1), so the operator stays float64 like the plain TC.
-    dtype = "complex" if hy != 0.0 else "float64"
-    geometry = ToricCodeGeometry(Lx, Lx, bc)
-    hi = nk.hilbert.Spin(s=1 / 2, N=geometry.N)
+    hinfo = None
+    if lattice == "honeycomb":
+        # Levin-Gu honeycomb TC / doubled semion on the smooth-OBC brick-wall patch.
+        # Both models are exactly real (even Y-count strings) => float64 + the sign
+        # diagnostics below, which are the primary deliverable for the DS model
+        # ((-1)^{#loops} ground state). Square-lattice observables don't apply.
+        assert bc == "OBC" and hy == 0.0 and not ftc, \
+            "honeycomb ED: smooth OBC only, no hy/ftc"
+        Ly = Ly if Ly else Lx
+        dtype = "float64"
+        geometry = HoneycombGeometry(Lx, Ly)
+        hi = nk.hilbert.Spin(s=1 / 2, N=geometry.N)
+        H, hinfo = create_honeycomb_hamiltonian(
+            hi, geometry, model, J=J, hx=hx, hz=hz, return_info=True,
+        )
+        if observables:
+            print("honeycomb: per-site observables deferred to Phase 2 -- "
+                  "energies + sign diagnostics only")
+        observables = False
+    else:
+        assert model == "tc", \
+            "--model ds requires --lattice honeycomb (square branch would run the " \
+            "plain TC and mislabel the output JSON)"
+        # ftc dressed stars are real (even Y count: X.Z = -i*sigma_y on the two shared
+        # links, (-i)^2 = -1), so the operator stays float64 like the plain TC.
+        dtype = "complex" if hy != 0.0 else "float64"
+        Ly = Lx
+        geometry = ToricCodeGeometry(Lx, Lx, bc)
+        hi = nk.hilbert.Spin(s=1 / 2, N=geometry.N)
 
-    H = create_hamiltonian(
-        hi=hi,
-        vertex_all=geometry.vertex_all,
-        plaq_all=geometry.plaq_all,
-        bonds=geometry.bonds,
-        hx=hx, hy=hy, hz=hz, J=J,
-        ftc=ftc,
-        dressed_stars=geometry.dressed_stars,
-        dtype=dtype,
-    )
+        H = create_hamiltonian(
+            hi=hi,
+            vertex_all=geometry.vertex_all,
+            plaq_all=geometry.plaq_all,
+            bonds=geometry.bonds,
+            hx=hx, hy=hy, hz=hz, J=J,
+            ftc=ftc,
+            dressed_stars=geometry.dressed_stars,
+            dtype=dtype,
+        )
 
     t0 = time.time()
     # Eigenvectors are needed for observables AND for the real-dtype sign/amplitude
@@ -64,13 +90,18 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
     ed_time = time.time() - t0
 
     result = {
-        "Lx": Lx, "N": geometry.N, "bc": bc,
+        "lattice": lattice, "model": model,
+        "Lx": Lx, "Ly": Ly, "N": geometry.N, "bc": bc,
         "hx": hx, "hy": hy, "hz": hz, "J": J, "ftc": ftc, "dtype": dtype,
         "energies": [float(e) for e in np.real(evals)],
         "E0": float(np.real(evals[0])),
         "gap": float(np.real(evals[1] - evals[0])) if len(evals) > 1 else None,
         "ed_time_s": ed_time,
     }
+    if lattice == "honeycomb":
+        result["n_vertices"] = int(geometry.n_vertices)
+        result["n_plaqs"] = int(geometry.n_plaqs)
+        result.update(hinfo)  # n_pauli_strings, plaq_string_counts, build_time_s
 
     # Sign-structure diagnostic for real Hamiltonians: fraction of negative GS
     # amplitudes (global phase fixed by the largest-|amplitude| component) and the
@@ -78,11 +109,31 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
     # Combo suffices); finite => signful GS (needs the complex ansatz). This is the
     # decisive check for the non-stoquastic ftc under hx/hz perturbations.
     if psi0 is not None and dtype == "float64":
-        v = np.real(psi0) * np.sign(np.real(psi0[np.argmax(np.abs(psi0))]))
+        if lattice == "honeycomb":
+            # Anchor the global sign to the all-up (zero-loop) configuration: in the
+            # (-1)^{#loops} gauge it always carries amplitude +|a|. The argmax anchor
+            # below is ARBITRARY for uniform-|amplitude| stabilizer states (it picks
+            # the first max index, which may be an odd-loop config and flips every
+            # reported sign fraction to 1-x).
+            idx_up = int(np.asarray(hi.states_to_numbers(np.ones((1, geometry.N)))).ravel()[0])
+            anchor = np.real(psi0[idx_up])
+            if abs(anchor) < 1e-12 * np.max(np.abs(psi0)):
+                anchor = np.real(psi0[np.argmax(np.abs(psi0))])
+            v = np.real(psi0) * np.sign(anchor)
+        else:
+            v = np.real(psi0) * np.sign(np.real(psi0[np.argmax(np.abs(psi0))]))
         scale = np.max(np.abs(v))
         cut = 1e-12 * scale
         result["neg_amp_fraction"] = float(np.mean(v < -cut))
         result["neg_amp_weight"] = float(np.sum(v[v < -cut] ** 2))
+        # Fraction of negatives among the NONZERO amplitudes (the whole-vector
+        # fraction above dilutes by the 2^N/support ratio -- misleading for
+        # stabilizer-like states with tiny support, e.g. the doubled semion where
+        # the support-normalized value is the (-1)^{#loops} signal).
+        n_nonzero_all = int(np.sum(np.abs(v) > cut))
+        result["neg_amp_fraction_support"] = (
+            float(np.sum(v < -cut) / n_nonzero_all) if n_nonzero_all else 0.0
+        )
         # Amplitude-DISTRIBUTION diagnostic (stronger than the sign check): at a
         # stabilizer fixed point the GS should be 0 or one identical value on every
         # Z-basis string (uniform superposition over the star-group orbit), i.e.
@@ -121,6 +172,12 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
 def main():
     p = argparse.ArgumentParser(description="Sparse Lanczos ED for the mixed-field toric code")
     p.add_argument("--Lx", type=int, required=True)
+    p.add_argument("--Ly", type=int, default=0,
+                   help="honeycomb: hexagon rows (0 => Ly = Lx); ignored for square")
+    p.add_argument("--lattice", choices=["square", "honeycomb"], default="square",
+                   help="honeycomb = Lx x Ly complete hexagons, smooth OBC (Levin-Gu)")
+    p.add_argument("--model", choices=["tc", "ds"], default="tc",
+                   help="honeycomb model: toric code or doubled semion")
     p.add_argument("--hx", type=float, default=0.0)
     p.add_argument("--hz", type=float, default=0.0)
     p.add_argument("--hy", type=float, default=0.0)
@@ -138,7 +195,12 @@ def main():
         Lx=args.Lx, hx=args.hx, hz=args.hz, hy=args.hy, J=args.J,
         bc=args.bc, k=args.k, observables=not args.no_observables,
         ftc=args.ftc,
+        lattice=args.lattice, model=args.model, Ly=args.Ly,
     )
+
+    if args.out is None and args.lattice == "honeycomb":
+        args.out = (f"results/ed/ed_hc{result['Lx']}x{result['Ly']}_{args.model}"
+                    f"_hx{args.hx:.2f}_hz{args.hz:.2f}.json")
 
     print(json.dumps({k: v for k, v in result.items()
                       if not isinstance(v, list) or len(v) <= 8}, indent=2))

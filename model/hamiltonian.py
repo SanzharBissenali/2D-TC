@@ -180,5 +180,109 @@ def create_hamiltonian(
 
     # Convert to Pauli strings for more efficient implementation
     H = H.to_pauli_strings()
-    
-    return H 
+
+    return H
+
+
+def create_honeycomb_hamiltonian(
+    hi: nk.hilbert.Spin,
+    geometry: Any,
+    model: str = "tc",
+    J: float = 1.0,
+    hx: float = 0.0,
+    hz: float = 0.0,
+    return_info: bool = False,
+) -> nk.operator.AbstractOperator:
+    """Levin-Gu honeycomb Hamiltonians (arXiv:1202.3120 Sec. IV) on the smooth-OBC
+    brick-wall patch (model/honeycomb_geometry.HoneycombGeometry).
+
+    model='tc':  H = -J sum_v Q_v - J sum_p X_hex(p) - hx sum sx - hz sum sz
+    model='ds':  H = -J sum_v Q_v + J sum_p [X_hex(p) * D_p * P_p] - hx sum sx - hz sum sz
+      Q_v  = prod sigma_z over the EXISTING links of vertex v (2-body at the boundary),
+      X_hex = prod sigma_x over the hexagon's 6 links (never truncated),
+      D_p  = prod over existing legs l of i^{(1-sigma_z_l)/2} = diag(1, i) per leg,
+      P_p  = prod over the hexagon's 6 vertices of (1 + Q_v)/2  (projector dressing:
+             makes S_p Hermitian on the FULL space and all terms mutually commuting).
+      NOTE the + sign on the DS plaquette term: the ground state has S_p P_p = -1 and
+      amplitudes (-1)^{number of closed down-spin loops}.
+
+    NOTE: the TC plaquette term omits the paper's projector (Levin-Gu Eq. 19 writes
+    -(prod tau^x) P_p): X_hex commutes with every Q_v and P_p = 1 on the Q_v = +1
+    sector, so the ground state, E0 = -(V+F) and the gap-2 plaquette excitation are
+    identical -- only vertex-charge-excited sectors differ from the verbatim paper TC.
+
+    Built entirely with PauliStrings products (`@`): a 12-site LocalOperator product
+    stores dense 4096^2 blocks and OOMs, while the string algebra stays at <= 2^10
+    NONZERO strings per DS plaquette (of the 32*2^legs distinct strings, half carry
+    weight exactly 0 and are pruned). Same-site X@Z = -iY is handled by the Pauli
+    algebra. Reality of the total weights does NOT follow from even Y-count alone
+    (the leg factors (1+-i)/2 are complex): expanding P_p over corner subsets T
+    pairs each T with its complement to give weights 2*Re f(T) -- exactly real for
+    every boundary truncation. Asserted at build time, then cast to float64.
+    """
+    import time as _time
+
+    assert model in ("tc", "ds"), f"unknown honeycomb model {model!r}"
+
+    def _ps(factory, j):
+        return factory(hi, int(j), dtype="complex").to_pauli_strings()
+
+    def _prod(ops):
+        out = None
+        for o in ops:
+            out = o if out is None else out @ o
+        return out
+
+    def _q(v):
+        return _prod(_ps(nk.operator.spin.sigmaz, j)
+                     for j in geometry.vertex_all[v] if j != -1)
+
+    t0 = _time.time()
+    H = None
+
+    def _acc(H, term):
+        return term if H is None else H + term
+
+    for v in range(geometry.n_vertices):
+        H = _acc(H, -J * _q(v))
+
+    plaq_string_counts = []
+    for p in range(geometry.n_plaqs):
+        op = _prod(_ps(nk.operator.spin.sigmax, j) for j in geometry.plaq_all[p])
+        if model == "tc":
+            term = -J * op
+        else:
+            for l in geometry.legs_all[p]:
+                if l != -1:  # missing boundary legs drop out of the dressing
+                    op = op @ (0.5 * (1 + 1j)
+                               + 0.5 * (1 - 1j) * _ps(nk.operator.spin.sigmaz, l))
+            for v in geometry.plaq_vertices[p]:
+                op = op @ (0.5 + 0.5 * _q(int(v)))
+            term = J * op  # + sign: DS ground state satisfies S_p P_p = -1
+        plaq_string_counts.append(int(np.asarray(term.weights).size))
+        H = _acc(H, term)
+
+    for j in range(hi.size):
+        if hz != 0.0:
+            H = _acc(H, -hz * _ps(nk.operator.spin.sigmaz, j))
+        if hx != 0.0:
+            H = _acc(H, -hx * _ps(nk.operator.spin.sigmax, j))
+
+    w = np.asarray(H.weights)
+    max_imag = float(np.abs(w.imag).max()) if np.iscomplexobj(w) else 0.0
+    assert max_imag < 1e-9, (
+        f"honeycomb H must have exactly real Pauli weights (got max|Im|={max_imag:g});"
+        " the T<->T^c pairing argument failed -- geometry/algebra bug"
+    )
+    H = nk.operator.PauliStrings(
+        hi, [str(s) for s in H.operators], np.real(w).astype(np.float64)
+    )
+
+    if return_info:
+        return H, {
+            "n_pauli_strings": int(np.asarray(H.weights).size),
+            "plaq_string_counts": plaq_string_counts,
+            "build_time_s": _time.time() - t0,
+            "max_imag_weight": max_imag,
+        }
+    return H

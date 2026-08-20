@@ -49,7 +49,14 @@ def main():
     
     # Parse command line arguments
     config = parse_arguments()
-    
+
+    # Honeycomb NQS wiring is Phase 2 -- without this guard, --lattice honeycomb
+    # would silently train the SQUARE toric code while the run JSON records
+    # lattice=honeycomb and config['N'] (honeycomb formula) skews the V-score.
+    # Placed before any file is written so no stray run JSON is created.
+    assert config.get('lattice', 'square') == 'square', \
+        "main.py: --lattice honeycomb is ED-only for now (NQS wiring is Phase 2)"
+
     # Override n_chains with device-specific value
     config['n_chains'] = n_chains
     

@@ -70,7 +70,19 @@ def parse_arguments() -> Dict[str, Any]:
     
     # Geometry parameters
     parser.add_argument('--Lx', type=int, default=2, help='Number of vertices in x direction')
+    parser.add_argument('--Ly', type=int, default=0,
+                        help='Honeycomb: number of hexagon rows (0 => Ly = Lx). The square '
+                             'lattice always ties Ly = Lx regardless of this flag.')
     parser.add_argument('--bc', type=str, choices=['OBC', 'PBC'], default='OBC', help='Boundary conditions')
+    parser.add_argument('--lattice', type=str, choices=['square', 'honeycomb'], default='square',
+                        help="'square' = toric code on links of an Lx x Lx grid (all prior work); "
+                             "'honeycomb' = Lx x Ly COMPLETE hexagons, brick-wall smooth-OBC patch "
+                             "(Levin-Gu convention: vertex Q_v = Z-product, plaquette = X-flip; "
+                             "N = 3*Lx*Ly + 2*(Lx+Ly) - 1)")
+    parser.add_argument('--model', type=str, choices=['tc', 'ds'], default='tc',
+                        help="Honeycomb model: 'tc' = toric code (-sum X_hex); 'ds' = doubled semion "
+                             "(+sum X_hex * i^{legs} * P_p, Levin-Gu projector-dressed -- signful "
+                             "(-1)^{#loops} ground state). Square lattice must keep 'tc'.")
     
     # Hamiltonian parameters
     parser.add_argument('--hx', type=float, required=True, help='X magnetic field strength')
@@ -206,6 +218,9 @@ def parse_arguments() -> Dict[str, Any]:
             'n_samples_fin': int(eval(sys.argv[11])),
             'architecture': 'Combo',  # Default values for backwards compatibility
             'bc': 'OBC',
+            'lattice': 'square',
+            'model': 'tc',
+            'Ly': 0,
             'J': 1.0,
             'Jy_p': 0.0,
             'Jy_v': 0.0,
@@ -255,11 +270,16 @@ def parse_arguments() -> Dict[str, Any]:
         args['channels_noninv'] = [int(el) for el in args['channels_noninv'].split(',')]
         args['channels_inv'] = [int(el) for el in args['channels_inv'].split(',')]
     
-    # Set Ly equal to Lx
-    args['Ly'] = args['Lx']
-    
-    # Determine N based on boundary conditions
-    if args['bc'] == "OBC":
+    # Set Ly equal to Lx (square: always tied; honeycomb: only when --Ly not given,
+    # since the ED ladder needs non-square patches like 2x3)
+    if args.get('lattice', 'square') == 'square' or not args.get('Ly', 0):
+        args['Ly'] = args['Lx']
+
+    # Determine N based on lattice and boundary conditions
+    if args.get('lattice', 'square') == 'honeycomb':
+        # Lx x Ly complete hexagons, smooth OBC (see model/honeycomb_geometry.py)
+        args['N'] = 3 * args['Lx'] * args['Ly'] + 2 * (args['Lx'] + args['Ly']) - 1
+    elif args['bc'] == "OBC":
         args['N'] = 2 * args['Lx'] * (args['Lx'] - 1)
     else:
         args['N'] = 2 * args['Lx'] * args['Ly']
@@ -299,6 +319,23 @@ def parse_arguments() -> Dict[str, Any]:
             "(hy/Jy_p anticommute with the dressed star same as hx -- unvalidated cut)"
         )
 
+    # Honeycomb (Levin-Gu TC / doubled semion) Phase 1: Hamiltonian + ED only. Every
+    # architecture, sampler, and Hamiltonian experiment above is square-lattice-
+    # specific until Phase 2, so exclude them all here rather than silently combine.
+    if args.get('lattice', 'square') == 'honeycomb':
+        assert args['bc'] == 'OBC', \
+            "--lattice honeycomb: only the smooth-OBC patch is implemented"
+        assert not args.get('dual_basis', False) and not args.get('ftc', False) and \
+            args.get('h_f', 0.0) == 0.0 and args['hy'] == 0.0 and \
+            args['Jy_p'] == 0.0 and args['Jy_v'] == 0.0 and args['Jbond'] == 0.0 and \
+            not args.get('use_custom_sampler', False), (
+            "--lattice honeycomb supports only hx/hz fields in Phase 1 "
+            "(no dual_basis/ftc/h_f/hy/Jy_p/Jy_v/Jbond/custom sampler)"
+        )
+    else:
+        assert args.get('model', 'tc') == 'tc', \
+            "--model ds requires --lattice honeycomb (the doubled semion lives on the honeycomb)"
+
     # --n_steps overrides sim_time (kept coupled so BOTH optimizer paths and the JSON
     # sim_params agree: n_iter is always derived as sim_time/dt).
     if args.get('n_steps', 0):
@@ -318,7 +355,13 @@ def parse_arguments() -> Dict[str, Any]:
     # POSITIVE amplitude (real log psi) and cannot represent it, so h_f!=0 must use a
     # signful ansatz: either the complex CNN (dtype=complex, like the hy path) or the
     # real-encoder + complex-readout transformer (--tf_complex_output, handled first).
-    if args.get('tf_complex_output', False) and args.get('symmetric_block', 'cnn') in ('transformer', 'full_transformer'):
+    if args.get('lattice', 'square') == 'honeycomb':
+        # Both honeycomb Hamiltonians are exactly real: the DS leg/projector dressing
+        # assembles to real Pauli weights (even Y-count per string), and hy is
+        # excluded above. The DS ground state is real-but-SIGNFUL ((-1)^{#loops});
+        # dtype governs the operator/ansatz reals, not the sign representability.
+        args['dtype'] = "float64"
+    elif args.get('tf_complex_output', False) and args.get('symmetric_block', 'cnn') in ('transformer', 'full_transformer'):
         args['dtype'] = "float64"
     # The fermionic TC (--ftc) is real but non-stoquastic. Sign structure of the exact
     # GS (scratchpad/validate_ftc.py + L=3 dense scans, 2026-08-07):
@@ -394,7 +437,10 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
         "sim_params": {
             "kind": ["G-NonInv"],
             "architecture_type": [config["architecture"]],
+            "lattice": [config.get("lattice", "square")],
+            "model": [config.get("model", "tc")],
             "Lx": [config["Lx"]],
+            "Ly": [config["Ly"]],
             "hx": [config["hx"]],
             "hy": [config["hy"]],
             "hz": [config["hz"]],
