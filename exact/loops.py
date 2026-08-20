@@ -30,9 +30,42 @@ import numpy as np
 
 
 def count_loops(z, link_endpoints):
-    """Count closed loops of down (-1) links. See module docstring."""
-    # TODO(user): ~10 lines.
-    raise NotImplementedError
+    """Count closed loops of down (-1) links. See module docstring.
+
+    Union-find over vertices touched by down links, with STRICT input
+    validation (bad callers fail loudly rather than getting a wrong count).
+    In the constrained sector the down subgraph is a disjoint union of simple
+    cycles, so #loops == #connected components; components are counted
+    incrementally (+1 per newly seen vertex, -1 per merging union).
+    """
+    z = np.asarray(z)
+    down = np.asarray(link_endpoints)[z == -1]
+    if down.size == 0:
+        return 0
+    degs = np.bincount(down.ravel())
+    assert not (degs % 2).any(), \
+        "config violates the vertex constraint (odd down-degree at a vertex)"
+
+    parent = {}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    n_comp = 0
+    for u, v in down:
+        u, v = int(u), int(v)
+        for w in (u, v):
+            if w not in parent:
+                parent[w] = w
+                n_comp += 1
+        ru, rv = find(u), find(v)
+        if ru != rv:
+            parent[ru] = rv
+            n_comp -= 1
+    return n_comp
 
 
 def _selftest():

@@ -600,8 +600,12 @@ fails with a "no NERSC key / cert expired" message, the daily cert lapsed — as
 the user to run `sshproxy -u sanzharb` (only they can; it needs their password +
 MFA), then retry. Monitoring/fetching is frictionless; **launching compute is gated**.
 
-**Before ever running `submit` (or any new cluster compute), consult the user and
-get explicit approval.** Present a short job spec first:
+**Submit policy (updated by the user 2026-08-20):** SHORT jobs — shared-queue or
+`debug`-QOS, roughly ≤ ~2 h, single-node-fraction — may be submitted without prior
+consultation, **but every submission must be reported to the user** (job id, what it
+runs, resources, why). **LONG/HUGE runs (exclusive multi-hour nodes, big arrays, full
+sweeps) still require prior consultation and explicit approval.** For those, present
+a short job spec first:
 - **Experiment** — what physics/sweep this run does and why now.
 - **Resources** — the `#SBATCH` request (queue, `-N/-G/-c`, node fraction).
 - **Walltime** — `-t` and the expected runtime, with headroom rationale.
