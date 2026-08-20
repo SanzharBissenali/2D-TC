@@ -31,6 +31,90 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
+def _honeycomb_observables(psi0, hi, geometry, model):
+    """Matrix-free expectation values in the honeycomb ground state (Tier 2).
+
+    Unlike the square path's per-site sparse-operator pass (expensive at 2^24),
+    nothing here builds an operator: diagonal observables (sigma^z, Q_v) come
+    straight from |psi|^2 via bit arithmetic, and the plaquette term / sigma^x
+    have exactly ONE connected element per basis state, so each is a single
+    XOR-indexed inner product. Works in netket state-number order: per-site bit
+    position/polarity probed via states_to_numbers (N cheap calls, asserted
+    bijective). O((N+V+F) passes over 2^N); ~minutes and ~6 GB at 2^27.
+
+    DS plaquette weight D(s)P(s) is computed real: P = prod (1+Q_v)/2 in {0,1},
+    and on its image the leg down-parity is even, so D = (-1)^{(sum n_legs)/2}
+    (odd-parity configs get an arbitrary sign there -- P already zeroes them).
+    """
+    N = geometry.N
+    dim = 1 << N
+    psi = np.real(np.asarray(psi0))
+    prob = psi * psi
+
+    up = np.ones((1, N))
+    n_up = int(np.asarray(hi.states_to_numbers(up)).ravel()[0])
+    shifts = np.empty(N, dtype=np.int64)
+    for i in range(N):
+        cfg = up.copy()
+        cfg[0, i] = -1
+        d = int(np.asarray(hi.states_to_numbers(cfg)).ravel()[0]) ^ n_up
+        assert d and (d & (d - 1)) == 0, "single site flip must toggle exactly one bit"
+        shifts[i] = d.bit_length() - 1
+    assert len(set(shifts.tolist())) == N, "site->bit map must be a bijection"
+
+    s = np.arange(dim, dtype=np.int64)
+    _zc = {}
+
+    def zval(i):
+        """sigma^z eigenvalue (+1 = up) of site i for every state number (cached)."""
+        i = int(i)
+        if i not in _zc:
+            upbit = (n_up >> int(shifts[i])) & 1
+            _zc[i] = np.where(((s >> int(shifts[i])) & 1) == upbit, 1, -1).astype(np.int8)
+        return _zc[i]
+
+    def qval(v):
+        q = np.ones(dim, dtype=np.int8)
+        for l in geometry.vertex_all[int(v)]:
+            if l != -1:
+                q = q * zval(l)
+        return q
+
+    obs = {}
+    sz = [float((prob * zval(i)).sum()) for i in range(N)]
+    sx = [float((psi[s ^ (1 << int(shifts[i]))] * psi).sum()) for i in range(N)]
+    obs["magnetization_Z"] = sz
+    obs["magnetization_X"] = sx
+    obs["magnetization_Z_mean"] = float(np.mean(sz))
+    obs["magnetization_X_mean"] = float(np.mean(sx))
+
+    qv = [float((prob * qval(v)).sum()) for v in range(geometry.n_vertices)]
+    obs["Qv_per_vertex"] = qv
+    obs["Qv_mean"] = float(np.mean(qv))
+    obs["Qv_min"] = float(np.min(qv))
+
+    plaq = []
+    for p in range(geometry.n_plaqs):
+        mask = 0
+        for e in geometry.plaq_all[p]:
+            mask |= 1 << int(shifts[int(e)])
+        if model == "ds":
+            w = np.ones(dim, dtype=np.int8)
+            for v in geometry.plaq_vertices[p]:
+                w = w * ((1 + qval(v)) // 2).astype(np.int8)
+            nsum = np.zeros(dim, dtype=np.int8)
+            for l in geometry.legs_all[p]:
+                if l != -1:
+                    nsum += ((1 - zval(l)) // 2).astype(np.int8)
+            w = w * np.where(nsum % 4 == 0, 1, -1).astype(np.int8)
+            plaq.append(float((psi[s ^ mask] * w * psi).sum()))
+        else:
+            plaq.append(float((psi[s ^ mask] * psi).sum()))
+    obs["plaq_term_per_hex"] = plaq
+    obs["plaq_term_mean"] = float(np.mean(plaq))
+    return obs
+
+
 def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False,
            lattice="square", model="tc", Ly=0):
     """Diagonalize the toric-code Hamiltonian and return a results dict."""
@@ -49,10 +133,8 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
         H, hinfo = create_honeycomb_hamiltonian(
             hi, geometry, model, J=J, hx=hx, hz=hz, return_info=True,
         )
-        if observables:
-            print("honeycomb: per-site observables deferred to Phase 2 -- "
-                  "energies + sign diagnostics only")
-        observables = False
+        # observables stay ON: the honeycomb pass is matrix-free (Tier 2, see
+        # _honeycomb_observables) -- no sparse operator builds, minutes even at 2^27.
     else:
         assert model == "tc", \
             "--model ds requires --lattice honeycomb (square branch would run the " \
@@ -152,7 +234,12 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
         result["amp_hist_counts"] = hist.tolist()
         result["amp_hist_edges"] = edges.tolist()
 
-    if observables and psi0 is not None:
+    if observables and psi0 is not None and lattice == "honeycomb":
+        t1 = time.time()
+        result.update(_honeycomb_observables(psi0, hi, geometry, model))
+        result["obs_time_s"] = time.time() - t1
+
+    if observables and psi0 is not None and lattice == "square":
         sz = [_expect(psi0, nk.operator.spin.sigmaz(hi, j).to_sparse()) for j in range(geometry.N)]
         sx = [_expect(psi0, nk.operator.spin.sigmax(hi, j).to_sparse()) for j in range(geometry.N)]
         result["magnetization_Z"] = sz

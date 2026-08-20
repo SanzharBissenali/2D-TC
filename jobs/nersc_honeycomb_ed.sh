@@ -48,8 +48,8 @@ echo "=== honeycomb ED: ${LX}x${LY}, k=$K, points=[$POINTS] ==="
 for pt in $POINTS; do
     IFS=: read -r model hx hz <<< "$pt"
     out=$(printf "%s/ed_hc%dx%d_%s_hx%.2f_hz%.2f.json" "$EDDIR" "$LX" "$LY" "$model" "$hx" "$hz")
-    if [ -f "$out" ]; then
-        echo "=== skip $out (exists) ==="
+    if [ -f "$out" ] && [ "${FORCE:-0}" != "1" ]; then
+        echo "=== skip $out (exists; FORCE=1 to recompute) ==="
         continue
     fi
     echo "=== ED honeycomb ${LX}x${LY} $model hx=$hx hz=$hz ==="
