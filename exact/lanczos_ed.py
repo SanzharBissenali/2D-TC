@@ -31,16 +31,101 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
-def _honeycomb_observables(psi0, hi, geometry, model):
+def _honeycomb_direct_ed(geometry, model, J, hx, hz, k):
+    """Direct scipy Lanczos for the honeycomb models -- bypasses netket's
+    Pauli->sparse conversion, whose intermediates OOM at 2^27 (observed: job
+    57315881 lost even the 7-pattern TC h=0 build to exit 137 on the 55 GB
+    shared node, while the final CSR is only ~12 GB).
+
+    Basis convention (used by ALL honeycomb ED downstream code): site i <-> bit
+    i of the state index, bit 1 = spin DOWN (sigma^z = -1), all-up config =
+    index 0. H row r holds the diagonal plus ONE entry per flip pattern
+    (F hexagons; N single flips if hx != 0) at column c = r^mask with value
+    w(c), so the CSR arrays are assembled directly by strided writes -- no COO
+    intermediates. Memory at 2^27: ~15 GB for h=0/hz (shared-node safe),
+    ~60 GB + Lanczos workspace for hx != 0 (regular node).
+    """
+    import scipy.sparse as sp
+    from scipy.sparse.linalg import eigsh
+
+    N, V, F = geometry.N, geometry.n_vertices, geometry.n_plaqs
+    dim = 1 << N
+    s = np.arange(dim, dtype=np.int64)
+
+    def zval(i):
+        return (1 - 2 * ((s >> int(i)) & 1)).astype(np.int8)
+
+    def qval(v):
+        q = np.ones(dim, dtype=np.int8)
+        for l in geometry.vertex_all[int(v)]:
+            if l != -1:
+                q = q * zval(l)
+        return q
+
+    Hd = np.zeros(dim)
+    for v in range(V):
+        Hd -= J * qval(v)
+    if hz != 0.0:
+        for i in range(N):
+            Hd -= hz * zval(i)
+
+    masks, weights = [], []   # weight = scalar, or per-COLUMN int8 vector (x J)
+    for p in range(F):
+        mask = 0
+        for e in geometry.plaq_all[p]:
+            mask |= 1 << int(e)
+        masks.append(mask)
+        if model == "ds":
+            w = np.ones(dim, dtype=np.int8)
+            for v in geometry.plaq_vertices[p]:
+                w = w * ((1 + qval(v)) // 2).astype(np.int8)
+            nsum = np.zeros(dim, dtype=np.int8)
+            for l in geometry.legs_all[p]:
+                if l != -1:
+                    nsum += ((1 - zval(l)) // 2).astype(np.int8)
+            # D(s)P(s): P in {0,1} forces even leg parity, where D = (-1)^{nsum/2}
+            weights.append(w * np.where(nsum % 4 == 0, 1, -1).astype(np.int8))
+        else:
+            weights.append(None)  # constant -J
+    if hx != 0.0:
+        for i in range(N):
+            masks.append(1 << i)
+            weights.append("hx")  # constant -hx
+
+    P = len(masks)
+    step = P + 1
+    indices = np.empty(dim * step, dtype=np.int32)
+    data = np.empty(dim * step, dtype=np.float64)
+    indices[0::step] = s
+    data[0::step] = Hd
+    for j, (m, w) in enumerate(zip(masks, weights)):
+        c = s ^ m
+        indices[j + 1::step] = c
+        if isinstance(w, np.ndarray):
+            data[j + 1::step] = J * w[c].astype(np.float64)   # +J X.D.P (ds)
+        elif w == "hx":
+            data[j + 1::step] = -hx
+        else:
+            data[j + 1::step] = -J                            # -J X_hex (tc)
+    del Hd, weights
+    indptr = np.arange(dim + 1, dtype=np.int64) * step
+    H = sp.csr_matrix((data, indices, indptr), shape=(dim, dim))
+    del data, indices
+
+    evals, evecs = eigsh(H, k=k, which="SA")
+    order = np.argsort(evals)
+    return evals[order], np.asarray(evecs[:, order[0]])
+
+
+def _honeycomb_observables(psi0, geometry, model):
     """Matrix-free expectation values in the honeycomb ground state (Tier 2).
 
     Unlike the square path's per-site sparse-operator pass (expensive at 2^24),
     nothing here builds an operator: diagonal observables (sigma^z, Q_v) come
     straight from |psi|^2 via bit arithmetic, and the plaquette term / sigma^x
     have exactly ONE connected element per basis state, so each is a single
-    XOR-indexed inner product. Works in netket state-number order: per-site bit
-    position/polarity probed via states_to_numbers (N cheap calls, asserted
-    bijective). O((N+V+F) passes over 2^N); ~minutes and ~6 GB at 2^27.
+    XOR-indexed inner product. Uses the _honeycomb_direct_ed bit convention
+    (site i <-> bit i, bit 1 = down). O((N+V+F) passes over 2^N).
 
     DS plaquette weight D(s)P(s) is computed real: P = prod (1+Q_v)/2 in {0,1},
     and on its image the leg down-parity is even, so D = (-1)^{(sum n_legs)/2}
@@ -51,26 +136,14 @@ def _honeycomb_observables(psi0, hi, geometry, model):
     psi = np.real(np.asarray(psi0))
     prob = psi * psi
 
-    up = np.ones((1, N))
-    n_up = int(np.asarray(hi.states_to_numbers(up)).ravel()[0])
-    shifts = np.empty(N, dtype=np.int64)
-    for i in range(N):
-        cfg = up.copy()
-        cfg[0, i] = -1
-        d = int(np.asarray(hi.states_to_numbers(cfg)).ravel()[0]) ^ n_up
-        assert d and (d & (d - 1)) == 0, "single site flip must toggle exactly one bit"
-        shifts[i] = d.bit_length() - 1
-    assert len(set(shifts.tolist())) == N, "site->bit map must be a bijection"
-
     s = np.arange(dim, dtype=np.int64)
     _zc = {}
 
     def zval(i):
-        """sigma^z eigenvalue (+1 = up) of site i for every state number (cached)."""
+        """sigma^z eigenvalue (+1 = up) of site i for every state index (cached)."""
         i = int(i)
         if i not in _zc:
-            upbit = (n_up >> int(shifts[i])) & 1
-            _zc[i] = np.where(((s >> int(shifts[i])) & 1) == upbit, 1, -1).astype(np.int8)
+            _zc[i] = (1 - 2 * ((s >> i) & 1)).astype(np.int8)
         return _zc[i]
 
     def qval(v):
@@ -82,7 +155,7 @@ def _honeycomb_observables(psi0, hi, geometry, model):
 
     obs = {}
     sz = [float((prob * zval(i)).sum()) for i in range(N)]
-    sx = [float((psi[s ^ (1 << int(shifts[i]))] * psi).sum()) for i in range(N)]
+    sx = [float((psi[s ^ (1 << i)] * psi).sum()) for i in range(N)]
     obs["magnetization_Z"] = sz
     obs["magnetization_X"] = sx
     obs["magnetization_Z_mean"] = float(np.mean(sz))
@@ -97,7 +170,7 @@ def _honeycomb_observables(psi0, hi, geometry, model):
     for p in range(geometry.n_plaqs):
         mask = 0
         for e in geometry.plaq_all[p]:
-            mask |= 1 << int(shifts[int(e)])
+            mask |= 1 << int(e)
         if model == "ds":
             w = np.ones(dim, dtype=np.int8)
             for v in geometry.plaq_vertices[p]:
@@ -129,10 +202,8 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
         Ly = Ly if Ly else Lx
         dtype = "float64"
         geometry = HoneycombGeometry(Lx, Ly)
-        hi = nk.hilbert.Spin(s=1 / 2, N=geometry.N)
-        H, hinfo = create_honeycomb_hamiltonian(
-            hi, geometry, model, J=J, hx=hx, hz=hz, return_info=True,
-        )
+        H = None  # honeycomb ED bypasses netket entirely -- see _honeycomb_direct_ed
+        hinfo = {"builder": "direct-scipy"}
         # observables stay ON: the honeycomb pass is matrix-free (Tier 2, see
         # _honeycomb_observables) -- no sparse operator builds, minutes even at 2^27.
     else:
@@ -158,17 +229,23 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
         )
 
     t0 = time.time()
-    # Eigenvectors are needed for observables AND for the real-dtype sign/amplitude
-    # diagnostics below, so --no-observables only skips the (expensive) per-site
-    # operator pass, not the eigenvector. Complex --no-observables keeps the old
-    # memory-lean path (that combination exists because of OOM on shared nodes).
-    want_vec = observables or dtype == "float64"
-    if want_vec:
-        evals, evecs = nk.exact.lanczos_ed(H, k=max(k, 1), compute_eigenvectors=True)
-        psi0 = np.asarray(evecs[:, 0])
+    if lattice == "honeycomb":
+        # Direct scipy path in OUR bit convention (site i <-> bit i, all-up = 0).
+        # netket's Pauli->sparse conversion intermediates OOM at 2^27 even for the
+        # 7-pattern TC h=0 matrix (job 57315881, exit 137 on the 55 GB shared node).
+        evals, psi0 = _honeycomb_direct_ed(geometry, model, J, hx, hz, k=max(k, 1))
     else:
-        evals = nk.exact.lanczos_ed(H, k=max(k, 1), compute_eigenvectors=False)
-        psi0 = None
+        # Eigenvectors are needed for observables AND for the real-dtype sign/amplitude
+        # diagnostics below, so --no-observables only skips the (expensive) per-site
+        # operator pass, not the eigenvector. Complex --no-observables keeps the old
+        # memory-lean path (that combination exists because of OOM on shared nodes).
+        want_vec = observables or dtype == "float64"
+        if want_vec:
+            evals, evecs = nk.exact.lanczos_ed(H, k=max(k, 1), compute_eigenvectors=True)
+            psi0 = np.asarray(evecs[:, 0])
+        else:
+            evals = nk.exact.lanczos_ed(H, k=max(k, 1), compute_eigenvectors=False)
+            psi0 = None
     ed_time = time.time() - t0
 
     result = {
@@ -197,8 +274,8 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
             # below is ARBITRARY for uniform-|amplitude| stabilizer states (it picks
             # the first max index, which may be an odd-loop config and flips every
             # reported sign fraction to 1-x).
-            idx_up = int(np.asarray(hi.states_to_numbers(np.ones((1, geometry.N)))).ravel()[0])
-            anchor = np.real(psi0[idx_up])
+            # direct bit convention: the all-up (zero-loop) config is index 0
+            anchor = np.real(psi0[0])
             if abs(anchor) < 1e-12 * np.max(np.abs(psi0)):
                 anchor = np.real(psi0[np.argmax(np.abs(psi0))])
             v = np.real(psi0) * np.sign(anchor)
@@ -236,7 +313,7 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
 
     if observables and psi0 is not None and lattice == "honeycomb":
         t1 = time.time()
-        result.update(_honeycomb_observables(psi0, hi, geometry, model))
+        result.update(_honeycomb_observables(psi0, geometry, model))
         result["obs_time_s"] = time.time() - t1
 
     if observables and psi0 is not None and lattice == "square":

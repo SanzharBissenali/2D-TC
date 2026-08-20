@@ -9,11 +9,13 @@
 # hz-only points: TC and DS spectra must COINCIDE (hz preserves vertex sectors
 # on a simply-connected patch); hx points are the model-discriminating ones.
 #
-# MEMORY: h=0 / hz-only points have ~7 connected flip patterns => sparse H
-# ~12 GB at 2^27, fits the shared node. hx != 0 adds 27 single-flip patterns
-# => ~60-70 GB sparse + build intermediates => needs an exclusive node:
-#   bash scripts/cluster.sh submit jobs/nersc_honeycomb_ed.sh -q regular -t 3:00:00 \
-#       --export=ALL,POINTS="ds:0.10:0.00 tc:0.10:0.00 ds:0.20:0.00 tc:0.20:0.00"
+# MEMORY (direct-scipy builder in lanczos_ed -- netket's Pauli->sparse
+# conversion OOM'd at 2^27 even for TC h=0, job 57315881): h=0 / hz-only
+# points = 7 flip patterns => ~15 GB + ~20 GB Lanczos workspace, fits the
+# shared node. hx != 0 adds 27 single-flip patterns => ~55 GB CSR + workspace
+# => needs an exclusive node:
+#   bash scripts/cluster.sh submit jobs/nersc_honeycomb_ed.sh -q regular -t 2:00:00 \
+#       --export=ALL,POINTS=ds:0.10:0.00+tc:0.10:0.00+ds:0.20:0.00+tc:0.20:0.00
 #
 # Env: LX (2), LY (3), K (6), POINTS ("model:hx:hz" list; default = h=0 + hz cut).
 # Resumable: skip-if-exists (ED writes its JSON once, at the end -- safe test).
