@@ -39,6 +39,10 @@ LX="${LX:-2}"
 LY="${LY:-3}"
 K="${K:-6}"
 POINTS="${POINTS:-tc:0.00:0.00 ds:0.00:0.00 tc:0.00:0.10 ds:0.00:0.10 tc:0.00:0.20 ds:0.00:0.20}"
+# '+' works as a separator too: --export values with SPACES don't survive the
+# cluster.sh ssh flattening (remote() rebuilds the command as one string), so
+# pass e.g. POINTS=ds:0.10:0.00+tc:0.10:0.00 -- no quoting needed anywhere.
+POINTS="${POINTS//+/ }"
 
 echo "=== honeycomb ED: ${LX}x${LY}, k=$K, points=[$POINTS] ==="
 for pt in $POINTS; do
