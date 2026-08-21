@@ -90,6 +90,12 @@ case "$cmd" in
         shift; pat="${1:-}"
         remote "ls -t logs/*${pat}*.out 2>/dev/null | head -1 | xargs -r tail -n 60"
         ;;
+    sacct)
+        # Read-only SLURM accounting for a finished job (state/exit/memory) --
+        # the only way to diagnose jobs that left the queue without a log file.
+        shift; jid="${1:?usage: bash scripts/cluster.sh sacct <jobid>}"
+        remote "sacct -j '$jid' --format=JobID,JobName%12,State%22,Elapsed,Start,ExitCode,MaxRSS,NodeList -P"
+        ;;
     fetch)
         # Commit any new results, then ALWAYS push — covers the case where a prior
         # fetch committed but the push was skipped (git commit exits non-zero when
