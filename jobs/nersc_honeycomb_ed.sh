@@ -40,6 +40,7 @@ mkdir -p "$EDDIR"
 LX="${LX:-2}"
 LY="${LY:-3}"
 K="${K:-6}"
+NCV="${NCV:-0}"   # ARPACK block size; ~48 for degenerate spectra (TC + hx)
 POINTS="${POINTS:-tc:0.00:0.00 ds:0.00:0.00 tc:0.00:0.10 ds:0.00:0.10 tc:0.00:0.20 ds:0.00:0.20}"
 # '+' works as a separator too: --export values with SPACES don't survive the
 # cluster.sh ssh flattening (remote() rebuilds the command as one string), so
@@ -56,7 +57,7 @@ for pt in $POINTS; do
     fi
     echo "=== ED honeycomb ${LX}x${LY} $model hx=$hx hz=$hz ==="
     ( cd "$REPO" && python -m exact.lanczos_ed --lattice honeycomb --model "$model" \
-        --Lx "$LX" --Ly "$LY" --hx "$hx" --hz "$hz" --k "$K" --out "$out" ) \
+        --Lx "$LX" --Ly "$LY" --hx "$hx" --hz "$hz" --k "$K" --ncv "$NCV" --out "$out" ) \
         || echo "!!! $model hx=$hx hz=$hz FAILED (exit $?) -- continuing"
 done
 echo "=== driver done ==="

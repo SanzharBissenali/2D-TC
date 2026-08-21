@@ -31,7 +31,7 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
-def _honeycomb_direct_ed(geometry, model, J, hx, hz, k):
+def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None):
     """Direct scipy Lanczos for the honeycomb models -- bypasses netket's
     Pauli->sparse conversion, whose intermediates OOM at 2^27 (observed: job
     57315881 lost even the 7-pattern TC h=0 build to exit 137 on the 55 GB
@@ -112,7 +112,12 @@ def _honeycomb_direct_ed(geometry, model, J, hx, hz, k):
     H = sp.csr_matrix((data, indices, indptr), shape=(dim, dim))
     del data, indices
 
-    evals, evecs = eigsh(H, k=k, which="SA")
+    # ncv: TC+hx conserves every X_hex, so its low spectrum sits in exactly
+    # degenerate flux-sector clusters -- ARPACK with the default ncv=20 thrashes
+    # (jobs 57338156/62 hit 1:45 walls at 2^27 while the non-degenerate DS
+    # points converged in ~50 min). A larger Krylov block (ncv ~ 48) is the fix;
+    # memory cost is ncv vectors (1 GB each at 2^27) -- regular-node territory.
+    evals, evecs = eigsh(H, k=k, which="SA", ncv=ncv)
     order = np.argsort(evals)
     return evals[order], np.asarray(evecs[:, order[0]])
 
@@ -189,7 +194,7 @@ def _honeycomb_observables(psi0, geometry, model):
 
 
 def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False,
-           lattice="square", model="tc", Ly=0):
+           lattice="square", model="tc", Ly=0, ncv=0):
     """Diagonalize the toric-code Hamiltonian and return a results dict."""
     hinfo = None
     if lattice == "honeycomb":
@@ -233,7 +238,8 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
         # Direct scipy path in OUR bit convention (site i <-> bit i, all-up = 0).
         # netket's Pauli->sparse conversion intermediates OOM at 2^27 even for the
         # 7-pattern TC h=0 matrix (job 57315881, exit 137 on the 55 GB shared node).
-        evals, psi0 = _honeycomb_direct_ed(geometry, model, J, hx, hz, k=max(k, 1))
+        evals, psi0 = _honeycomb_direct_ed(geometry, model, J, hx, hz, k=max(k, 1),
+                                           ncv=ncv if ncv else None)
     else:
         # Eigenvectors are needed for observables AND for the real-dtype sign/amplitude
         # diagnostics below, so --no-observables only skips the (expensive) per-site
@@ -348,6 +354,9 @@ def main():
     p.add_argument("--J", type=float, default=1.0)
     p.add_argument("--bc", choices=["OBC", "PBC"], default="OBC")
     p.add_argument("--k", type=int, default=4, help="number of lowest eigenvalues")
+    p.add_argument("--ncv", type=int, default=0,
+                   help="ARPACK Krylov block size (0 = scipy default; raise to ~48 "
+                        "for degenerate low spectra, e.g. honeycomb TC with hx)")
     p.add_argument("--ftc", action="store_true",
                    help="fermionic toric code: dressed stars A'_v = A_v * B_NE(v)")
     p.add_argument("--no-observables", action="store_true",
@@ -357,7 +366,7 @@ def main():
 
     result = run_ed(
         Lx=args.Lx, hx=args.hx, hz=args.hz, hy=args.hy, J=args.J,
-        bc=args.bc, k=args.k, observables=not args.no_observables,
+        bc=args.bc, k=args.k, ncv=args.ncv, observables=not args.no_observables,
         ftc=args.ftc,
         lattice=args.lattice, model=args.model, Ly=args.Ly,
     )
