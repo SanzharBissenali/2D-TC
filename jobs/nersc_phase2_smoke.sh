@@ -43,10 +43,16 @@ run() {
     || echo "!!! $name FAILED (exit $?) -- continuing"
 }
 
-run "smk_${OPT}_tc12" --model tc --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
-run "smk_${OPT}_tc22" --model tc --Lx 2 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
-run "smk_${OPT}_ds12" --model ds --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
-run "smk_${OPT}_pl12" --model tc --Lx 1 --Ly 2 --architecture PlainCNN --channels_noninv 1,32,24,8,2
+# RUNS selects a subset (space list of tc12 tc22 ds12 pl12) for reruns.
+RUNS="${RUNS:-tc12 tc22 ds12 pl12}"
+want() { case " $RUNS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+want tc12 && run "smk_${OPT}_tc12" --model tc --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
+want tc22 && run "smk_${OPT}_tc22" --model tc --Lx 2 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
+want ds12 && run "smk_${OPT}_ds12" --model ds --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
+# --channels_inv is argparse-required (PlainCNN ignores it) -- dummy value.
+want pl12 && run "smk_${OPT}_pl12" --model tc --Lx 1 --Ly 2 --architecture PlainCNN \
+    --channels_noninv 1,32,24,8,2 --channels_inv 16,8,1
 
 python - <<'EOF'
 import glob
@@ -57,11 +63,15 @@ for f in sorted(glob.glob("G-equiv_0_smk_*.json")):
     name = f[len("G-equiv_0_"):-len(".json")]
     e0 = next(v for k, v in E0.items() if name.endswith(k))
     d = json.load(open(f))
-    E = np.array(d["energy"], dtype=float)
+    E = np.array([float(x) for x in d["energy"]])
     tail = np.median(E[-20:])
     rel = abs(tail - e0) / abs(e0)
-    ops = {k: v[-1] for k, v in d.get("order_params", {}).items()}
+    ops = {k: v[-1] for k, v in d.get("order_params", {}).items() if v}
+    try:
+        vs = f"{float(d['Vscore'][-1]):.3e}"
+    except (ValueError, TypeError):
+        vs = repr(d["Vscore"][-1])
     print(f"GATE {name}: steps={len(E)} E_tail={tail:.8f} relerr_vs_{e0}={rel:.3e} "
-          f"Vscore={d['Vscore'][-1]:.3e} order={ops}")
+          f"Vscore={vs} order={ops}")
 EOF
 echo "=== smoke done ==="

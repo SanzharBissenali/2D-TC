@@ -90,6 +90,13 @@ case "$cmd" in
         shift; pat="${1:-}"
         remote "ls -t logs/*${pat}*.out 2>/dev/null | head -1 | xargs -r tail -n 60"
         ;;
+    get)
+        # Read-only: cat a file from the cluster repo to a local path (for
+        # gitignored outputs like logs/smoke_*/ that fetch doesn't carry).
+        shift; rpath="${1:?usage: bash scripts/cluster.sh get <remote-repo-path> <local-path>}"
+        lpath="${2:?usage: bash scripts/cluster.sh get <remote-repo-path> <local-path>}"
+        remote "cat '$rpath'" > "$lpath"
+        ;;
     sacct)
         # Read-only SLURM accounting for a finished job (state/exit/memory) --
         # the only way to diagnose jobs that left the queue without a log file.
