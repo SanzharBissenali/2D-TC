@@ -25,30 +25,38 @@ OUT=$REPO/logs/smoke_phase2
 mkdir -p "$OUT"
 cd "$OUT"
 
+# OPT=tdvp (default) or minsr. Dense-SR TDVP is O(P^2..P^3)/step and option-(a)
+# Block-3 makes P = 7k..19k => ~4 s/step at 1x2 on an A100 (job 57618925 hit the
+# debug wall on run 2 of 4). minSR (VMC_SRt) is P-independent -- the repo's
+# sanctioned optimizer for big-P ansatze (Variant-3 precedent).
+OPT="${OPT:-tdvp}"
+EXTRA=""
+[ "$OPT" = "minsr" ] && EXTRA="--optimizer minsr --lr ${LR:-0.01}"
+
 run() {
   name=$1; shift
   echo "=== $name ==="
   PYTHONPATH=$REPO python "$REPO/main.py" --outindex 0 --jobid "$name" \
     --lattice honeycomb --hx 0.0 --hy 0.0 --hz 0.0 \
     --dt 0.01 --diag_shift 6e-5 --kernel_size 2 \
-    --n_samples_fin 8192 --use_custom_sampler --sim_time 3.5 "$@" \
+    --n_samples_fin 8192 --use_custom_sampler --sim_time 3.5 $EXTRA "$@" \
     || echo "!!! $name FAILED (exit $?) -- continuing"
 }
 
-run smk_tc12 --model tc --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
-run smk_tc22 --model tc --Lx 2 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
-run smk_ds12 --model ds --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
-run smk_pl12 --model tc --Lx 1 --Ly 2 --architecture PlainCNN --channels_noninv 1,32,24,8,2
+run "smk_${OPT}_tc12" --model tc --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
+run "smk_${OPT}_tc22" --model tc --Lx 2 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
+run "smk_${OPT}_ds12" --model ds --Lx 1 --Ly 2 --channels_noninv 1,16 --channels_inv 16,8,1
+run "smk_${OPT}_pl12" --model tc --Lx 1 --Ly 2 --architecture PlainCNN --channels_noninv 1,32,24,8,2
 
 python - <<'EOF'
+import glob
 import json
 import numpy as np
-E0 = {"smk_tc12": -12.0, "smk_tc22": -20.0, "smk_ds12": -12.0, "smk_pl12": -12.0}
-for name, e0 in E0.items():
-    try:
-        d = json.load(open(f"G-equiv_0_{name}.json"))
-    except FileNotFoundError:
-        print(f"GATE {name}: MISSING"); continue
+E0 = {"tc12": -12.0, "tc22": -20.0, "ds12": -12.0, "pl12": -12.0}
+for f in sorted(glob.glob("G-equiv_0_smk_*.json")):
+    name = f[len("G-equiv_0_"):-len(".json")]
+    e0 = next(v for k, v in E0.items() if name.endswith(k))
+    d = json.load(open(f))
     E = np.array(d["energy"], dtype=float)
     tail = np.median(E[-20:])
     rel = abs(tail - e0) / abs(e0)
