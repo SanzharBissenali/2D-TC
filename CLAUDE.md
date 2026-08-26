@@ -582,11 +582,33 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   TC and DS spectra are IDENTICAL under pure hz on simply-connected patches (hz
   preserves vertex sectors) — **hx is the discriminating axis** (1×2, hx=0.1: DS
   −12.0203 vs TC −12.0275; the projectors resist charge creation).
-- **Pending:** user writes `exact/loops.py:count_loops` (stub + expected-value harness
-  ready; independent validator/swarm counters must agree with it); end-of-phase
-  lattice diagram artifact = the user sign-off gate for Phase 2. Session validator
-  artifacts (validate_honeycomb.py, honeycomb_reference_values.json,
-  reconcile_phase1.py) live in the session scratchpad.
+- **Phase 1 CLOSED (2026-08-20):** Term Atlas diagram approved by the user;
+  `count_loops` implemented (Claude, per user instruction: union-find over down-link
+  vertices, strict even-degree validation) — all harness cases + independent counters
+  agree. Session validator artifacts (validate_honeycomb.py,
+  honeycomb_reference_values.json, reconcile_phase1.py) live in the session scratchpad.
+- **ED phase COMPLETE (2026-08-21): 10/10 points at 2×3 (27 qubits) + 22 local points
+  (1×1..2×2), all gates green, all with Tier-2 observables.** E0=−28 exact, gap 2 at
+  h=0; hz∈{0.1,0.2}: TC≡DS spectra to all digits, DS neg-frac RIGID at 0.75 (=48/64,
+  count_loops-predicted); hx∈{0.1,0.2}: models split (DS E0 higher/resists
+  polarization; DS neg-frac 0.774→0.803; TC exactly positive, ⟨X̂ₚ⟩≡1 and gap≡2 —
+  X̂ₚ conserved under hx ⇒ frozen flux sectors). ED campaign gotchas, all committed:
+  (1) netket Pauli→sparse OOMs at 2^27 even for 7-pattern TC h=0 (intermediates ≫
+  final 12 GB CSR) ⇒ honeycomb ED = direct scipy CSR builder `_honeycomb_direct_ed`
+  (own bit order: site i↔bit i, all-up=0; validated ~1e-13 vs netket on all 22 local
+  points); (2) Tier-2 matrix-free observables `_honeycomb_observables` (σᶻ/Q_v from
+  |ψ|², plaq/σˣ via single XOR gathers; ~5e-15 vs dense); (3) TC+hx = exactly
+  degenerate flux-sector clusters ⇒ ARPACK needs `--ncv`≈48 (TC-hx ~110 min/pt vs
+  DS ~55, light pts ~15-20 min at 2^27); (4) Perlmutter `squeue --me` transiently
+  returns an EMPTY table ⇒ job watches must poll `cluster.sh sacct` terminal states
+  (subcommand added), never squeue presence; (5) `cluster.sh submit` flattens ssh
+  args ⇒ `--export` values use `+` separators (job script converts).
+- **NEXT = Phase 2 (honeycomb Combo NQS):** Wilson tokens = vertex Q_v (masked
+  products, −1 sentinels); Block-1 with 3 link-orientation kernels (v + two zigzag
+  h-parities); invariant CNN over the vertex-token grid; hexagon-flip MultiRule
+  sampler (fix the maxval off-by-one — ergodicity-critical) + in-sector chain init;
+  init gates: hexagon-flip invariance + TC h=0 exactness. Arms: cnn / plaincnn
+  (+complex-cnn pending user call); W&B on/off also pending user call.
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
