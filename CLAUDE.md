@@ -605,12 +605,36 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   returns an EMPTY table ⇒ job watches must poll `cluster.sh sacct` terminal states
   (subcommand added), never squeue presence; (5) `cluster.sh submit` flattens ssh
   args ⇒ `--export` values use `+` separators (job script converts).
-- **NEXT = Phase 2 (honeycomb Combo NQS):** Wilson tokens = vertex Q_v (masked
-  products, −1 sentinels); Block-1 with 3 link-orientation kernels (v + two zigzag
-  h-parities); invariant CNN over the vertex-token grid; hexagon-flip MultiRule
-  sampler (fix the maxval off-by-one — ergodicity-critical) + in-sector chain init;
-  init gates: hexagon-flip invariance + TC h=0 exactness. Arms: cnn / plaincnn
-  (+complex-cnn pending user call); W&B on/off also pending user call.
+- **Phase 2 COMPLETE (2026-08-26): honeycomb Combo/PlainCNN NQS built, smoked on
+  debug GPU, Sonnet-swarmed.** `model/honeycomb_networks.py` (`create_honeycomb_model`):
+  Block-1 = 3 link-orientation kernels (v + two zigzag h-parities) × 5 slots,
+  identity init, scaled sigmoid; Wilson vertex tokens == Q_v at init (masked
+  products); Block-3 = full all-to-all displacement kernels PER SUBLATTICE
+  (user-locked option (a): 45+45 / 69+69 taps at 2×2 / 2×3 ⇒ Combo 12,489 / 19,017
+  params); PlainCNN (1,32,24,8,2) = 15,120. Sampler: MultiRule maxval off-by-one
+  FIXED (all callers), hexagon clusters, `SectorInitWeightedRule` (all-up chains).
+  main.py wiring + init-only hexflip gate (exact 0 at identity init; invariance is
+  init-only — the square reference behaves identically, 0.0 at init / O(1) at random
+  params). **Smoke (350 steps, minSR lr 0.01, A100):** TC 1×2/2×2 rel-err 1.4e-9 /
+  2.5e-10 (V-score ~1e-13; tdvp cross-check at 1×2: 1.4e-10); **DS 1×2 converged to
+  the EXACT positive-state (Hastings) floor −10−√2 = −11.41421356 to 8 decimals,
+  ⟨plaq⟩=−1/√2, V-score 8e-11** (the optimum has constant local energy on its
+  support — analytic + swarm-verified); PlainCNN fell to the trivial |+⟩ product
+  state (E≈−2=−F, ⟨X̂ₚ⟩≡1, ⟨Q_v⟩≈0, 83% rel-err) — cannot find topological order.
+  **Phase-3 prediction (exact combinatorial positivity-constrained minimization):
+  DS 2×2 positive floor = −19.5699527513 (2.15% gap).** Gotchas: dense-SR tdvp is
+  O(P²⁻³)/step ⇒ ~4 s/step at 1×2 with option-(a) P — honeycomb arms run **minSR**
+  (all arms, both-or-neither); debug-QOS smoke jobs must fit 30 min; `--channels_inv`
+  is argparse-required even for PlainCNN (pass a dummy). Swarm findings fixed:
+  docstring init-only invariance wording, honeycomb architecture/symmetric_block
+  assert (transformer arms would be silently ignored), cluster.sh `get` temp-file
+  write. Known inherited quirks (documented, not bugs): complex-path Wilson tokens
+  = rescale·Q_v; `_identity_init_local` is identity only for single-layer Block-1
+  (multi-layer channels_noninv would sum channels — caught by the init gate).
+- **NEXT = Phase 3 (fixed-point experiment):** arms cnn(-real) / cnn-complex /
+  plaincnn × {tc, ds} at 2×2 + 2×3, minSR lr 0.01, 350 steps, vs the ED bank.
+  DS-real gates: 1×2 → −10−√2, 2×2 → −19.5699527513. Sign-fidelity diagnostics
+  vs count_loops on the loop sector. W&B pending user call.
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.

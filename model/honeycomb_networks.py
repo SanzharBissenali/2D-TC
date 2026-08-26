@@ -3,8 +3,11 @@ study: the approximately-symmetric Combo and the unconstrained PlainCNN baseline
 both built from geometry tables (model/honeycomb_geometry.HoneycombGeometry).
 
 Combo = Block-1 local link CNN (non-invariant, identity-init) -> Wilson vertex
-tokens (masked products over vertex_all; exactly hexagon-flip invariant at ANY
-parameters, since every hexagon shares 0 or 2 links with every vertex) ->
+tokens (masked products over vertex_all; exactly hexagon-flip invariant AT
+IDENTITY-INIT Block-1, where tokens == Q_v -- generic Block-1 parameters
+legitimately break it, that is the "approximately symmetric" design; the
+invariance is Block-3-parameter-independent though, since at fixed tokens
+every hexagon shares 0 or 2 links with every vertex) ->
 Block-3 invariant CNN over the vertex-token lattice -> mean = log psi.
 PlainCNN = a stack of the same Block-1 primitive, mean over links; no Wilson,
 no invariant block, no symmetry (the baseline that must find the GS unaided).

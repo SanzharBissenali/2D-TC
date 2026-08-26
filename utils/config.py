@@ -332,6 +332,14 @@ def parse_arguments() -> Dict[str, Any]:
             "--lattice honeycomb supports only hx/hz fields "
             "(no dual_basis/ftc/h_f/hy/Jy_p/Jy_v/Jbond)"
         )
+        # create_honeycomb_model only implements Combo/PlainCNN; the transformer
+        # arms (--symmetric_block != cnn) hard-code square-lattice machinery and
+        # would otherwise be SILENTLY ignored (swarm finding, 2026-08-26).
+        assert args.get('symmetric_block', 'cnn') == 'cnn' and \
+            args.get('architecture', 'Combo') in ('Combo', 'PlainCNN'), (
+            "--lattice honeycomb supports only --architecture Combo/PlainCNN "
+            "with --symmetric_block cnn"
+        )
     else:
         assert args.get('model', 'tc') == 'tc', \
             "--model ds requires --lattice honeycomb (the doubled semion lives on the honeycomb)"

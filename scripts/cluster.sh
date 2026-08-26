@@ -95,7 +95,9 @@ case "$cmd" in
         # gitignored outputs like logs/smoke_*/ that fetch doesn't carry).
         shift; rpath="${1:?usage: bash scripts/cluster.sh get <remote-repo-path> <local-path>}"
         lpath="${2:?usage: bash scripts/cluster.sh get <remote-repo-path> <local-path>}"
-        remote "cat '$rpath'" > "$lpath"
+        # write via a temp file so a failed remote cat leaves no stray empty file
+        remote "cat '$rpath'" > "$lpath.part" && mv "$lpath.part" "$lpath" \
+            || { rm -f "$lpath.part"; echo "get failed: $rpath"; exit 1; }
         ;;
     sacct)
         # Read-only SLURM accounting for a finished job (state/exit/memory) --
