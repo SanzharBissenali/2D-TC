@@ -31,7 +31,8 @@ from simulation.observables import (
     create_renyi_callback, create_2point_callback, create_conditional_callbacks,
     create_plaquette_stabilizer_callback, create_vertex_stabilizer_callback,
     create_Se_callback, create_dressed_star_callback,
-    check_Av_invariance, check_Bp_invariance, dump_attention
+    check_Av_invariance, check_Bp_invariance, dump_attention,
+    _check_flip_invariance
 )
 from utils.config import setup_environment, parse_arguments, create_data_dict, save_data
 from utils.io import save_model, log_runtime, record_experiment_info
@@ -39,6 +40,65 @@ from utils import wandb_logger
 
 # Import custom sampler if needed
 from simulation.custom_sampler import create_custom_sampler
+
+
+def _honeycomb_final_observables(vs, geometry, config):
+    """End-of-run <Q_v> and <plaquette term> for the honeycomb models.
+
+    Mirrors observables.calculate_* (per-stabilizer op -> vstate.expect -> JSON
+    order_params) but honeycomb-native: Q_v = prod sigma_z over the vertex's
+    existing links (2-body at the boundary); plaquette term = X_hex for tc,
+    X_hex*D_legs*P_p for ds. Built with PauliStrings algebra like
+    create_honeycomb_hamiltonian (a 12-site LocalOperator product OOMs), and
+    cast to exactly real weights the same way.
+    """
+    hi = vs.hilbert
+
+    def _ps(f, j):
+        return f(hi, int(j), dtype="complex").to_pauli_strings()
+
+    def _prod(ops):
+        out = None
+        for o in ops:
+            out = o if out is None else out @ o
+        return out
+
+    def _real(op):
+        w = np.asarray(op.weights)
+        assert np.abs(w.imag).max() < 1e-9, "honeycomb observable must be exactly real"
+        return nk.operator.PauliStrings(hi, [str(s) for s in op.operators],
+                                        np.real(w).astype(np.float64))
+
+    def _q(v):
+        return _prod(_ps(nk.operator.spin.sigmaz, j)
+                     for j in geometry.vertex_all[int(v)] if j != -1)
+
+    qv = [float(np.real(vs.expect(_real(_q(v))).mean))
+          for v in range(geometry.n_vertices)]
+    pl = []
+    for p in range(geometry.n_plaqs):
+        op = _prod(_ps(nk.operator.spin.sigmax, int(j)) for j in geometry.plaq_all[p])
+        if config.get('model', 'tc') == 'ds':
+            for l in geometry.legs_all[p]:
+                if l != -1:
+                    op = op @ (0.5 * (1 + 1j)
+                               + 0.5 * (1 - 1j) * _ps(nk.operator.spin.sigmaz, int(l)))
+            for v in geometry.plaq_vertices[p]:
+                op = op @ (0.5 + 0.5 * _q(v))
+        pl.append(float(np.real(vs.expect(_real(op)).mean)))
+
+    with open(config['filename'], 'r') as f:
+        data = json.load(f)
+    op_dict = data.setdefault("order_params", {})
+    for key, val in (("Qv_mean", float(np.mean(qv))), ("Qv_min", float(np.min(qv))),
+                     ("plaq_term_mean", float(np.mean(pl))),
+                     ("plaq_term_std", float(np.std(pl)))):
+        op_dict.setdefault(key, []).append(val)
+    with open(config['filename'], 'w') as f:
+        json.dump(data, f)
+    print(f"<Q_v> mean={np.mean(qv):.6f} min={np.min(qv):.6f} | "
+          f"<plaq term> mean={np.mean(pl):.6f} std={np.std(pl):.6f}")
+
 
 def main():
     # Start timing
@@ -49,13 +109,6 @@ def main():
     
     # Parse command line arguments
     config = parse_arguments()
-
-    # Honeycomb NQS wiring is Phase 2 -- without this guard, --lattice honeycomb
-    # would silently train the SQUARE toric code while the run JSON records
-    # lattice=honeycomb and config['N'] (honeycomb formula) skews the V-score.
-    # Placed before any file is written so no stray run JSON is created.
-    assert config.get('lattice', 'square') == 'square', \
-        "main.py: --lattice honeycomb is ED-only for now (NQS wiring is Phase 2)"
 
     # Override n_chains with device-specific value
     config['n_chains'] = n_chains
@@ -75,51 +128,68 @@ def main():
     # Save initial data
     save_data(config['filename'], data)
     
-    # Set up the geometry
-    geometry = ToricCodeGeometry(config['Lx'], config['Ly'], config['bc'])
-    
-    # Create the Hilbert space
-    hi = nk.hilbert.Spin(s=1/2, N=geometry.N)
-    
-    # Create the Hamiltonian
-    H = create_hamiltonian(
-        hi=hi,
-        vertex_all=geometry.vertex_all,
-        plaq_all=geometry.plaq_all,
-        bonds=geometry.bonds,
-        hx=config['hx'],
-        hy=config['hy'],
-        hz=config['hz'],
-        J=config.get('J', 1.0),
-        Jy_v=config.get('Jy_v', 0.0),
-        Jy_p=config.get('Jy_p', 0.0),
-        Jbond=config.get('Jbond', 0.0),
-        h_f=config.get('h_f', 0.0),
-        fermion_pairs=geometry.fermion_pairs,
-        dual_basis=config.get('dual_basis', False),
-        ftc=config.get('ftc', False),
-        dressed_stars=geometry.dressed_stars,
-        dtype=config['dtype']
-    )
-    
-    # Create the kernel manager
-    kernel_manager = KernelManager(
-        Lx=config['Lx'],
-        Ly=config['Ly'],
-        bc=config['bc'],
-        kernel_size=config['kernel_size'],
-        kernel_size_inv=config['kernel_size_inv'],
-        arr_coord=geometry.arr_coord,
-        dg_p=geometry.dg_p,
-        N=geometry.N,
-        dg_v=geometry.dg_v,
-        vertex_all=geometry.vertex_all,
-        dual=config.get('dual_basis', False)
-    )
-    
-    # Create the neural network model
-    model = create_model(config, geometry.plaq_all, kernel_manager)
-    print(model)
+    is_honeycomb = config.get('lattice', 'square') == 'honeycomb'
+    if is_honeycomb:
+        # Honeycomb (Levin-Gu TC / doubled semion), Phase 2 wiring. Imports are
+        # lazy so the square path never depends on the honeycomb modules.
+        from model.honeycomb_geometry import HoneycombGeometry
+        from model.hamiltonian import create_honeycomb_hamiltonian
+        from model.honeycomb_networks import create_honeycomb_model
+
+        geometry = HoneycombGeometry(config['Lx'], config['Ly'], config['bc'])
+        hi = nk.hilbert.Spin(s=1/2, N=geometry.N)
+        H = create_honeycomb_hamiltonian(
+            hi, geometry, config.get('model', 'tc'),
+            J=config.get('J', 1.0), hx=config['hx'], hz=config['hz'],
+        )
+        model = create_honeycomb_model(config, geometry)
+        print(model)
+    else:
+        # Set up the geometry
+        geometry = ToricCodeGeometry(config['Lx'], config['Ly'], config['bc'])
+
+        # Create the Hilbert space
+        hi = nk.hilbert.Spin(s=1/2, N=geometry.N)
+
+        # Create the Hamiltonian
+        H = create_hamiltonian(
+            hi=hi,
+            vertex_all=geometry.vertex_all,
+            plaq_all=geometry.plaq_all,
+            bonds=geometry.bonds,
+            hx=config['hx'],
+            hy=config['hy'],
+            hz=config['hz'],
+            J=config.get('J', 1.0),
+            Jy_v=config.get('Jy_v', 0.0),
+            Jy_p=config.get('Jy_p', 0.0),
+            Jbond=config.get('Jbond', 0.0),
+            h_f=config.get('h_f', 0.0),
+            fermion_pairs=geometry.fermion_pairs,
+            dual_basis=config.get('dual_basis', False),
+            ftc=config.get('ftc', False),
+            dressed_stars=geometry.dressed_stars,
+            dtype=config['dtype']
+        )
+
+        # Create the kernel manager
+        kernel_manager = KernelManager(
+            Lx=config['Lx'],
+            Ly=config['Ly'],
+            bc=config['bc'],
+            kernel_size=config['kernel_size'],
+            kernel_size_inv=config['kernel_size_inv'],
+            arr_coord=geometry.arr_coord,
+            dg_p=geometry.dg_p,
+            N=geometry.N,
+            dg_v=geometry.dg_v,
+            vertex_all=geometry.vertex_all,
+            dual=config.get('dual_basis', False)
+        )
+
+        # Create the neural network model
+        model = create_model(config, geometry.plaq_all, kernel_manager)
+        print(model)
     
     # Create a sampler based on configuration
     if config.get('use_custom_sampler', False):
@@ -180,6 +250,39 @@ def main():
                 f"B_p tokenization (Variant 3)"
             )
 
+    # Honeycomb Combo: hexagon-flip invariance is exact AT IDENTITY INIT (tokens
+    # == the raw Q_v values, and each hexagon shares 0 or 2 links with each
+    # vertex). It is INIT-ONLY: the tokens are products of Block-1-DRESSED link
+    # features, so generic Block-1 parameters legitimately break it -- that IS
+    # the "approximate" half of the architecture, exactly like the square
+    # Combo's A_v / the dual-basis B_p gates (empirically: perturbing params by
+    # 0.05 gives |Delta log psi| ~ 3e-3, the symmetry-breaking scale, which we
+    # print as information rather than assert on). PlainCNN: no symmetry at all.
+    if is_honeycomb:
+        if config.get('architecture', 'Combo') == 'Combo':
+            clusters = [list(map(int, p)) for p in geometry.plaq_all]
+            dev0 = _check_flip_invariance(model, vs.parameters, geometry.N,
+                                          clusters, n_configs=32)
+            _rng = np.random.default_rng(1)
+            pert = jax.tree_util.tree_map(
+                lambda x: x + jnp.asarray(
+                    0.05 * _rng.standard_normal(np.shape(x)), dtype=x.dtype),
+                vs.parameters,
+            )
+            dev1 = _check_flip_invariance(model, pert, geometry.N,
+                                          clusters, n_configs=32)
+            print(f"[hexflip invariance] max |Delta log psi|: init {dev0:.2e}, "
+                  f"perturbed params {dev1:.2e} (init-only gate; the perturbed "
+                  f"value is the approximate-symmetry-breaking scale)")
+            if not config.get('init_params'):
+                assert dev0 < 1e-8, (
+                    f"hexagon-flip symmetry BROKEN at init (max dev {dev0:.2e}) -- "
+                    "check the vertex Wilson masking (-1 sentinels) / Block-1 "
+                    "identity init / Block-3 tables"
+                )
+        else:
+            print("[hexflip invariance] skipped: PlainCNN carries no architectural symmetry")
+
     # Dual-basis Combo CNN: the exactly-embedded-at-init symmetry is B_p (plaquette
     # flips preserve every star product; Block-1's scaled sigmoid maps +-1 -> +-1
     # exactly at identity init). Init-only gate -- training legitimately breaks it
@@ -194,8 +297,10 @@ def main():
                 f"invariant-CNN kernel table"
             )
 
-    # Setup callbacks for observables
-    callbacks = create_conditional_callbacks(geometry)
+    # Setup callbacks for observables (square-specific: the magnetization /
+    # B_p callbacks assume the square geometry's coordinate helpers; honeycomb
+    # gets its observables in one end-of-run pass instead)
+    callbacks = [] if is_honeycomb else create_conditional_callbacks(geometry)
 
     # Print information before starting optimization
     print(f"Number of qubits: {geometry.N}")
@@ -219,8 +324,13 @@ def main():
     # Calculate observables
     print("Calculating final observables...")
     
+    if is_honeycomb:
+        # Honeycomb-native pass (<Q_v>, <plaquette term>); the square callbacks
+        # below assume ToricCodeGeometry's coordinate helpers and don't apply.
+        _honeycomb_final_observables(vs, geometry, config)
+
     # For Lx >= 6, calculate the Wilson-loop observables at the end (expensive)
-    if geometry.Lx >= 6:
+    if not is_honeycomb and geometry.Lx >= 6:
         if config.get('dual_basis', False):
             print("WARNING: calculate_wilson_loops labels X/Z in the SIMULATION basis; "
                   "under --dual_basis the physical meanings are swapped (not remapped here).")
@@ -232,32 +342,33 @@ def main():
         # callback = create_2point_callback(geometry) #doesn't work yet
         # callback(vs, -1, -1, config)
 
-    # Renyi-2 entropy at the end for ALL sizes (calculate_renyi_entropy now falls back to
-    # a single central placement at small L, so L=4 no longer crashes on an empty grid).
-    callback = create_renyi_callback(geometry)
-    callback(vs, -1, -1, config)
-
-    # Always calculate magnetizations at the end
-    callback = create_magnetization_callback(geometry)
-    callback(vs, -1, -1, config)
-
-    # Final plaquette-stabilizer <B_p> (m-flux / contamination diagnostic)
-    callback = create_plaquette_stabilizer_callback(geometry)
-    callback(vs, -1, -1, config)
-
-    # Final vertex-stabilizer <A_v> (e-charge diagnostic; complements <B_p>)
-    callback = create_vertex_stabilizer_callback(geometry)
-    callback(vs, -1, -1, config)
-
-    # Final fermionic (dyon) order parameter <S_e> = <X_a.Z_b>
-    callback = create_Se_callback(geometry)
-    callback(vs, -1, -1, config)
-
-    # Fermionic TC: final dressed-star <A'_v> = <A_v * B_NE(v)> (the model's actual
-    # vertex-sector stabilizers; ~1 at h=0 alongside <A_v> and <B_p>)
-    if config.get('ftc', False):
-        callback = create_dressed_star_callback(geometry)
+    if not is_honeycomb:
+        # Renyi-2 entropy at the end for ALL sizes (calculate_renyi_entropy now falls
+        # back to a single central placement at small L, so L=4 no longer crashes).
+        callback = create_renyi_callback(geometry)
         callback(vs, -1, -1, config)
+
+        # Always calculate magnetizations at the end
+        callback = create_magnetization_callback(geometry)
+        callback(vs, -1, -1, config)
+
+        # Final plaquette-stabilizer <B_p> (m-flux / contamination diagnostic)
+        callback = create_plaquette_stabilizer_callback(geometry)
+        callback(vs, -1, -1, config)
+
+        # Final vertex-stabilizer <A_v> (e-charge diagnostic; complements <B_p>)
+        callback = create_vertex_stabilizer_callback(geometry)
+        callback(vs, -1, -1, config)
+
+        # Final fermionic (dyon) order parameter <S_e> = <X_a.Z_b>
+        callback = create_Se_callback(geometry)
+        callback(vs, -1, -1, config)
+
+        # Fermionic TC: final dressed-star <A'_v> = <A_v * B_NE(v)> (the model's
+        # actual vertex-sector stabilizers; ~1 at h=0 alongside <A_v> and <B_p>)
+        if config.get('ftc', False):
+            callback = create_dressed_star_callback(geometry)
+            callback(vs, -1, -1, config)
 
     # Attention interpretability dump: gamma ranges + alpha tables (full_transformer),
     # or the per-(layer, head) content-gate alpha_h (plaquette_transformer / variant1).

@@ -112,8 +112,14 @@ class MultiRule(nk.sampler.rules.MetropolisRule):
         # Split the rng key into 2: one for each random operation
         key_indx, key_flip = jax.random.split(key, 2)
 
-        # Pick random cluster index on every chain
-        indxs = jax.random.randint(key_indx, shape=(n_chains, 1), minval=0, maxval=n_clusters-1)
+        # Pick random cluster index on every chain. NOTE: maxval is EXCLUSIVE in
+        # jax.random.randint, so the bound is n_clusters (a long-standing
+        # maxval=n_clusters-1 off-by-one silently never proposed the LAST cluster;
+        # fixed 2026-08-26 -- ergodicity-critical for the honeycomb loop sector,
+        # where hexagon flips are the only accepted moves at the fixed point, and
+        # a strict bug fix for the square paths, whose last vertex/plaquette
+        # cluster now becomes proposable as intended).
+        indxs = jax.random.randint(key_indx, shape=(n_chains, 1), minval=0, maxval=n_clusters)
 
         @jax.vmap
         def flip(sigma, cluster):
@@ -122,6 +128,21 @@ class MultiRule(nk.sampler.rules.MetropolisRule):
         sigmap = flip(sigmas, self.update_clusters[indxs])        # flip those clusters
 
         return sigmap, None  # second argument for potential correcting factor of L (not present for this rule)
+
+
+class SectorInitWeightedRule(WeightedRule):
+    """WeightedRule whose chains START in the vertex-constrained (loop) sector.
+
+    Honeycomb-only: the Levin-Gu ground states are supported on closed-loop
+    configurations, and at the fixed point single flips have acceptance exactly
+    0 (they leave the sector), so netket's default uniform-random chain init
+    would start every chain off-support and relax slowly through near-zero
+    amplitudes. The all-up configuration (zero loops) is the canonical in-sector
+    start. The square path keeps the plain WeightedRule byte-identical.
+    """
+
+    def random_state(self, sampler, machine, parameters, state, key):
+        return jnp.ones((sampler.n_batches, sampler.hilbert.size), dtype=sampler.dtype)
 
 
 def create_custom_sampler(geometry, hi, config):
@@ -140,7 +161,17 @@ def create_custom_sampler(geometry, hi, config):
     vertex_all = geometry.vertex_all
     N = geometry.N
 
-    if config.get('dual_basis', False):
+    if config.get('lattice', 'square') == 'honeycomb':
+        # Honeycomb (Levin-Gu TC / doubled semion): the symmetry orbit moves are
+        # HEXAGON X-flips (plaq_all rows, always 6 valid links at smooth OBC --
+        # plaquettes are never truncated). Single flips leave the vertex-
+        # constrained loop sector (zero acceptance at the fixed point), so the
+        # hexagon rule carries ergodicity: on the OBC patch the hexagon
+        # boundaries span the entire cycle space (dim = F).
+        clusters = np.array(geometry.plaq_all)
+        assert (clusters != -1).all(), "honeycomb plaq_all must have no -1 sentinels"
+        print("Custom sampler clusters: hexagon flips (honeycomb)")
+    elif config.get('dual_basis', False):
         # Dual basis: the network's (approximate) symmetry orbit moves are the
         # PLAQUETTE flips (physical B_p is an X-product in the conjugated basis);
         # all plaquettes have 4 valid edges, so no bulk filter is needed.
@@ -160,8 +191,11 @@ def create_custom_sampler(geometry, hi, config):
     # Cluster (vertex- or plaquette-) flip rule
     vertex_rule = MultiRule(clusters)
     
-    # Combine vertex flip with single flip update
-    weighted_rule = WeightedRule(
+    # Combine cluster flip with single flip update. Honeycomb chains additionally
+    # START in the loop sector (all-up) via the random_state override.
+    rule_cls = (SectorInitWeightedRule
+                if config.get('lattice', 'square') == 'honeycomb' else WeightedRule)
+    weighted_rule = rule_cls(
         (samp_ratio/(samp_ratio+1), 1-samp_ratio/(samp_ratio+1)),
         [single_rule, vertex_rule]
     )

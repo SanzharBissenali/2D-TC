@@ -319,18 +319,18 @@ def parse_arguments() -> Dict[str, Any]:
             "(hy/Jy_p anticommute with the dressed star same as hx -- unvalidated cut)"
         )
 
-    # Honeycomb (Levin-Gu TC / doubled semion) Phase 1: Hamiltonian + ED only. Every
-    # architecture, sampler, and Hamiltonian experiment above is square-lattice-
-    # specific until Phase 2, so exclude them all here rather than silently combine.
+    # Honeycomb (Levin-Gu TC / doubled semion): hx/hz fields only; every square-
+    # lattice Hamiltonian experiment stays excluded. The custom sampler IS
+    # supported since Phase 2 (hexagon-flip clusters + in-sector chain init in
+    # simulation/custom_sampler.py).
     if args.get('lattice', 'square') == 'honeycomb':
         assert args['bc'] == 'OBC', \
             "--lattice honeycomb: only the smooth-OBC patch is implemented"
         assert not args.get('dual_basis', False) and not args.get('ftc', False) and \
             args.get('h_f', 0.0) == 0.0 and args['hy'] == 0.0 and \
-            args['Jy_p'] == 0.0 and args['Jy_v'] == 0.0 and args['Jbond'] == 0.0 and \
-            not args.get('use_custom_sampler', False), (
-            "--lattice honeycomb supports only hx/hz fields in Phase 1 "
-            "(no dual_basis/ftc/h_f/hy/Jy_p/Jy_v/Jbond/custom sampler)"
+            args['Jy_p'] == 0.0 and args['Jy_v'] == 0.0 and args['Jbond'] == 0.0, (
+            "--lattice honeycomb supports only hx/hz fields "
+            "(no dual_basis/ftc/h_f/hy/Jy_p/Jy_v/Jbond)"
         )
     else:
         assert args.get('model', 'tc') == 'tc', \
