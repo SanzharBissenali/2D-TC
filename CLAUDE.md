@@ -589,8 +589,10 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   honeycomb_reference_values.json, reconcile_phase1.py) live in the session scratchpad.
 - **ED phase COMPLETE (2026-08-21): 10/10 points at 2×3 (27 qubits) + 22 local points
   (1×1..2×2), all gates green, all with Tier-2 observables.** E0=−28 exact, gap 2 at
-  h=0; hz∈{0.1,0.2}: TC≡DS spectra to all digits, DS neg-frac RIGID at 0.75 (=48/64,
-  count_loops-predicted); hx∈{0.1,0.2}: models split (DS E0 higher/resists
+  h=0; hz∈{0.1,0.2}: TC≡DS in the ZERO-DEFECT sector (E0 always; all k=6 levels at 2×3,
+  but charge-sector levels DIFFER — DS projectors push them UP — and interleave into
+  the low spectrum at small sizes: 1×2 eigs 3-5, 2×2 eig 5), DS neg-frac RIGID at
+  0.75 (=48/64, count_loops-predicted); hx∈{0.1,0.2}: models split (DS E0 higher/resists
   polarization; DS neg-frac 0.774→0.803; TC exactly positive, ⟨X̂ₚ⟩≡1 and gap≡2 —
   X̂ₚ conserved under hx ⇒ frozen flux sectors). ED campaign gotchas, all committed:
   (1) netket Pauli→sparse OOMs at 2^27 even for 7-pattern TC h=0 (intermediates ≫
