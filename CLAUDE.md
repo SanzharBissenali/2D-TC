@@ -633,8 +633,12 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   (multi-layer channels_noninv would sum channels — caught by the init gate).
 - **NEXT = Phase 3 (fixed-point experiment):** arms cnn(-real) / cnn-complex /
   plaincnn × {tc, ds} at 2×2 + 2×3, minSR lr 0.01, 350 steps, vs the ED bank.
-  DS-real gates: 1×2 → −10−√2, 2×2 → −19.5699527513. Sign-fidelity diagnostics
-  vs count_loops on the loop sector. W&B pending user call.
+  DS-real gates (pre-registered BEFORE the runs; multi-restart optimizer matches
+  the two exact floors to 1e-12): 1×2 → −10−√2 (smoke-confirmed to 8 decimals),
+  2×2 → −19.5699527513, 2×3 → −27.2189973793 (gaps 4.89%/2.15%/2.79% — not
+  monotonic, patch-shape-dependent). Sign-fidelity diagnostics vs count_loops on
+  the loop sector. W&B ON (offline, groups hc-phase3-2x2/-2x3). Jobs 57642001/010
+  (real arms) + 57642033/036 (cnnc) submitted 2026-08-27, grouped size×dtype.
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
