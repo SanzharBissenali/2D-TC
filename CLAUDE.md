@@ -631,14 +631,32 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   write. Known inherited quirks (documented, not bugs): complex-path Wilson tokens
   = rescale·Q_v; `_identity_init_local` is identity only for single-layer Block-1
   (multi-layer channels_noninv would sum channels — caught by the init gate).
-- **NEXT = Phase 3 (fixed-point experiment):** arms cnn(-real) / cnn-complex /
-  plaincnn × {tc, ds} at 2×2 + 2×3, minSR lr 0.01, 350 steps, vs the ED bank.
-  DS-real gates (pre-registered BEFORE the runs; multi-restart optimizer matches
-  the two exact floors to 1e-12): 1×2 → −10−√2 (smoke-confirmed to 8 decimals),
-  2×2 → −19.5699527513, 2×3 → −27.2189973793 (gaps 4.89%/2.15%/2.79% — not
-  monotonic, patch-shape-dependent). Sign-fidelity diagnostics vs count_loops on
-  the loop sector. W&B ON (offline, groups hc-phase3-2x2/-2x3). Jobs 57642001/010
-  (real arms) + 57642033/036 (cnnc) submitted 2026-08-27, grouped size×dtype.
+- **Phase 3 RESULT (2026-08-27, jobs 57642001/010/033/036, all COMPLETED): the
+  three-tier story is quantitative at both sizes.** h=0, minSR lr 0.01, 350 steps,
+  seed 0; DS floors pre-registered BEFORE the runs (commit f801a2e; multi-restart
+  optimizer matched the exact 1×2/2×2 floors to 1e-12): 1×2 → −10−√2, 2×2 →
+  −19.5699527513, 2×3 → −27.2189973793 (gaps 4.89%/2.15%/2.79%, not monotonic).
+  (1) **cnn (positive Combo):** TC exact — 2×2 −20.00000000 (5e-9, V 7e-14), 2×3
+  −27.99999975 (2.5e-7); **DS pinned AT the Hastings floor** — 2×2 −19.56988161
+  (7e-5 above), 2×3 −27.21404541 (5e-3 above; correct side). (2) **cnnc (complex
+  Combo):** TC exact (2×2 5e-8, 2×3 1e-10 — complexity costs nothing); **DS: the
+  generic phase head does NOT solve the signs** — 2×2 collapsed ONTO the positive
+  solution (−19.56960691, ⟨plaq⟩ = positive-optimum value −0.8924); 2×3 dipped
+  marginally BELOW the floor (−27.26834504 = 6.3% of the floor→GS gap recovered,
+  V-score 1.6e-3 i.e. least-converged run) but stays 0.73 above the GS (2.6%
+  rel-err vs TC's 1e-9). (3) **plaincnn:** trivial |+⟩ product state on TC
+  (E ≈ −F: −3.98/−5.97, ⟨X̂ₚ⟩≡1, ⟨Q_v⟩≈0); junk on DS (−6.04/−6.00). W&B synced
+  (project 2d-tc, groups hc-phase3-2x2/-2x3). Results in results/nqs/
+  G-equiv_1_hc{2x2,2x3}_{tc,ds}_h0_{cnn,cnnc,plaincnn}.*  — note cnnc JSONs
+  serialize energies as complex STRINGS ('(-3.86+0j)'): parse with complex().
+- **NEXT = Phase 4: sign-aware architecture (USER designs it — explicitly NOT the
+  peer repo's quadratic head).** Empirical mandate measured: positivity caps the
+  Combo exactly at the floor, generic complex phases recover ≤6% of the sign gap.
+  Assets for the design discussion: count_loops ground truth, loop-sector floor
+  mechanics (constant-local-energy optimum), the DS leg-phase/corner structure
+  (i^{n} dressing = the local encoding of (−1)^{#loops} on-sector), and the fTC/CKR
+  dressed-operator precedent. Sign-fidelity diagnostic (NQS signs vs count_loops
+  over sampled loop-sector configs) not yet implemented — natural Phase-4 metric.
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
