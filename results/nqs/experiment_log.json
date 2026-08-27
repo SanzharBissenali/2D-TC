@@ -1166,5 +1166,110 @@
       "imag": -0.00017711992635596014
     },
     "runtime": 2010.2428150177002
+  },
+  {
+    "run_id": "96f38d17",
+    "timestamp": "2026-08-27 06:52:02",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_h0_cnnqA.json",
+        "G-equiv_1_hc2x2_ds_h0_cnnqA.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": {
+      "real": -19.99999999823617,
+      "imag": -6.577621895059242e-19
+    },
+    "runtime": 926.0979142189026
+  },
+  {
+    "run_id": "a5886e12",
+    "timestamp": "2026-08-27 07:02:15",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_h0_cnnqB.json",
+        "G-equiv_1_hc2x3_ds_h0_cnnqB.mpack"
+      ]
+    },
+    "n_params": 19017,
+    "final_energy": -27.999999881053434,
+    "runtime": 1507.7826898097992
+  },
+  {
+    "run_id": "8a80c707",
+    "timestamp": "2026-08-27 07:03:59",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_h0_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_h0_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -20.000000517236924,
+    "runtime": 676.2356300354004
   }
 ]
