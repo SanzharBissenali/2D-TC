@@ -649,14 +649,36 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   (project 2d-tc, groups hc-phase3-2x2/-2x3). Results in results/nqs/
   G-equiv_1_hc{2x2,2x3}_{tc,ds}_h0_{cnn,cnnc,plaincnn}.*  — note cnnc JSONs
   serialize energies as complex STRINGS ('(-3.86+0j)'): parse with complex().
-- **NEXT = Phase 4: sign-aware architecture (USER designs it — explicitly NOT the
-  peer repo's quadratic head).** Empirical mandate measured: positivity caps the
-  Combo exactly at the floor, generic complex phases recover ≤6% of the sign gap.
-  Assets for the design discussion: count_loops ground truth, loop-sector floor
-  mechanics (constant-local-energy optimum), the DS leg-phase/corner structure
-  (i^{n} dressing = the local encoding of (−1)^{#loops} on-sector), and the fTC/CKR
-  dressed-operator precedent. Sign-fidelity diagnostic (NQS signs vs count_loops
-  over sampled loop-sector configs) not yet implemented — natural Phase-4 metric.
+- **Phase 4 design (user's, 2026-08-27): QEC sign head.** log ψ = log A_θ(σ) [positive
+  Combo, real float64] + iπ·s(σ), s deterministic & parameter-free: read the Q_v
+  syndrome (diagonal — B_p has no value on a config; flux data is the head's OUTPUT),
+  MWPM-recover ε (exact minimal-cardinality = leading-order PT; pymatching sparse
+  blossom, unit weights), s = [#loops(ε·σ) mod 2] via count_loops (2D closed form of
+  the anchor+dressed-flip-covariance recursion — the recursion form is what ports to
+  3D). Exact at hx=0 (any hz, sector theorem); at hx≠0 the ONLY error channel is
+  tie-degenerate minimal recoveries (= semion braiding), which are interference-
+  suppressed. Head keeps QGT real/untouched. Optional learned residual = Phase 4b.
+- **Phase 4 gate 0 PASSED (2026-08-27): sign-fidelity diagnostic vs ED**
+  (`scripts/sign_fidelity.py`, full 2^N enumeration; F_s = |ψ|²-weighted sign
+  agreement = max fidelity of positive-net×head; results/diagnostics/, jobs
+  57647055/59 + 57648190/98/200). All 4 sizes incl. 2×3=2^27: **F_s = 1 EXACTLY at
+  hx=0 for every hz** (0–0.5); hx>0: wrong_weight = tie_weight/2 at every point/size
+  (ties are the SOLE error mode), ~hx^10 scaling (interference kills tied configs at
+  leading order), **size-independent** (hx=0.1: 2.3e-10 @1×2 → 1.9e-10 @2×3; even
+  hx=0.5: 3.6e-6). F_plus baselines reproduce neg-fracs (0.25/0.25/0.125/0.25).
+  E0 9/9 match committed ED. Swarm: independent brute-force reimpl (own dense DS H,
+  own MWPM, own loop counter) — all disagreements provably tie-degenerate, zero on
+  unique-recovery configs; conventions attacker — numerics all PASS, fixed bare
+  `--out` makedirs crash; fusion-blossom agent — 219k configs, cardinality identical
+  everywhere, every sign diff tie-verified ⇒ head is solver-agnostic. Caveat:
+  `tie_disagree_weight` is a LOWER bound (linear-in-index perturbations miss
+  sum-degenerate ties, ~0.003% relative). Gotchas: 2^27 head pass ~18 min (2 MWPM
+  decodes × 134M configs) + hx ED ~13 min ⇒ 31 min total JUST misses debug 30-min
+  wall — hx points need `-q regular -t 1:30`; light (h0/hz) points fit debug.
+  lanczos_ed gained optional `tol` (default 0, unchanged); pymatching installed in
+  2dtc env + local venv. NEXT: wire the head into the NQS (multiply into the Combo,
+  MCMC over |A|², sign enters E_loc ratios) and re-run the Phase-3 h=0 arms — DS
+  must now smash the Hastings floors to TC-grade error; then hz/hx field arms.
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
