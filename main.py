@@ -42,7 +42,7 @@ from utils import wandb_logger
 from simulation.custom_sampler import create_custom_sampler
 
 
-def _honeycomb_final_observables(vs, geometry, config):
+def _honeycomb_final_observables(vs, geometry, config, sign_frame_head=None):
     """End-of-run <Q_v> and <plaquette term> for the honeycomb models.
 
     Mirrors observables.calculate_* (per-stabilizer op -> vstate.expect -> JSON
@@ -51,6 +51,12 @@ def _honeycomb_final_observables(vs, geometry, config):
     X_hex*D_legs*P_p for ds. Built with PauliStrings algebra like
     create_honeycomb_hamiltonian (a 12-site LocalOperator product OOMs), and
     cast to exactly real weights the same way.
+
+    sign_frame_head (Phase 4, sign_impl 'operator' only): the vstate then holds
+    the POSITIVE A while the physical state is S*A, so OFF-DIAGONAL observables
+    must be conjugated to S*op*S like the Hamiltonian; diagonal Q_v commutes
+    with S and stays bare. With sign_impl 'model' the state itself carries the
+    signs -- pass None and both impls must report identical numbers.
     """
     hi = vs.hilbert
 
@@ -85,7 +91,11 @@ def _honeycomb_final_observables(vs, geometry, config):
                                + 0.5 * (1 - 1j) * _ps(nk.operator.spin.sigmaz, int(l)))
             for v in geometry.plaq_vertices[p]:
                 op = op @ (0.5 + 0.5 * _q(v))
-        pl.append(float(np.real(vs.expect(_real(op)).mean)))
+        op = _real(op)
+        if sign_frame_head is not None:
+            from model.sign_frame import SignFramedOperator
+            op = SignFramedOperator(op, sign_frame_head)
+        pl.append(float(np.real(vs.expect(op).mean)))
 
     with open(config['filename'], 'r') as f:
         data = json.load(f)
@@ -143,6 +153,34 @@ def main():
             J=config.get('J', 1.0), hx=config['hx'], hz=config['hz'],
         )
         model = create_honeycomb_model(config, geometry)
+        base_model = model            # pre-sign-head network (gates run on this)
+        sign_frame_head = None        # set iff impl 'operator' (observables re-frame)
+        if config.get('sign_head', 'none') == 'qec':
+            # Phase-4 QEC sign head: psi = (-1)^{s(sigma)} A_theta(sigma) with
+            # s = MWPM-recovered loop parity (model/sign_head.py). Two exactly
+            # equivalent realizations (see model/sign_frame.py):
+            #   operator (production): train positive A on H~ = SHS -- sampler,
+            #     network, dtype all byte-identical to the sign-free arm;
+            #   model (equivalence witness): log psi += 1j*pi*s via host callback.
+            try:
+                import pymatching  # noqa: F401
+            except ImportError as e:
+                raise ImportError(
+                    "--sign_head qec needs pymatching (pip install pymatching "
+                    "on a login node, like wandb)") from e
+            from model.sign_head import QECSignHead
+            head = QECSignHead(geometry)
+            if config.get('sign_impl', 'operator') == 'operator':
+                from model.sign_frame import SignFramedOperator
+                H = SignFramedOperator(H, head)
+                sign_frame_head = head
+                print(f"[sign head] qec/operator: training on H~ = SHS "
+                      f"(loop table 2^{head.F}, decoder-A MWPM)")
+            else:
+                from model.honeycomb_networks import SignedModel
+                model = SignedModel(base_model, head.s01)
+                print(f"[sign head] qec/model: log psi += i*pi*s(sigma) via "
+                      f"pure_callback (loop table 2^{head.F}, decoder-A MWPM)")
         print(model)
     else:
         # Set up the geometry
@@ -260,16 +298,23 @@ def main():
     # print as information rather than assert on). PlainCNN: no symmetry at all.
     if is_honeycomb:
         if config.get('architecture', 'Combo') == 'Combo':
+            # The gate always runs on the BASE network: the sign head flips
+            # log psi by i*pi under hexagon flips BY DESIGN (dressed-operator
+            # covariance), so the wrapped model would trivially fail it.
+            gate_model, gate_params = model, vs.parameters
+            if config.get('sign_head', 'none') != 'none' \
+                    and config.get('sign_impl', 'operator') == 'model':
+                gate_model, gate_params = base_model, vs.parameters['base']
             clusters = [list(map(int, p)) for p in geometry.plaq_all]
-            dev0 = _check_flip_invariance(model, vs.parameters, geometry.N,
+            dev0 = _check_flip_invariance(gate_model, gate_params, geometry.N,
                                           clusters, n_configs=32)
             _rng = np.random.default_rng(1)
             pert = jax.tree_util.tree_map(
                 lambda x: x + jnp.asarray(
                     0.05 * _rng.standard_normal(np.shape(x)), dtype=x.dtype),
-                vs.parameters,
+                gate_params,
             )
-            dev1 = _check_flip_invariance(model, pert, geometry.N,
+            dev1 = _check_flip_invariance(gate_model, pert, geometry.N,
                                           clusters, n_configs=32)
             print(f"[hexflip invariance] max |Delta log psi|: init {dev0:.2e}, "
                   f"perturbed params {dev1:.2e} (init-only gate; the perturbed "
@@ -327,7 +372,8 @@ def main():
     if is_honeycomb:
         # Honeycomb-native pass (<Q_v>, <plaquette term>); the square callbacks
         # below assume ToricCodeGeometry's coordinate helpers and don't apply.
-        _honeycomb_final_observables(vs, geometry, config)
+        _honeycomb_final_observables(vs, geometry, config,
+                                     sign_frame_head=sign_frame_head)
 
     # For Lx >= 6, calculate the Wilson-loop observables at the end (expensive)
     if not is_honeycomb and geometry.Lx >= 6:

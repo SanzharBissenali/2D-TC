@@ -1,0 +1,60 @@
+"""Sign-framed operator (Phase-4 formulation B, production).
+
+For the diagonal unitary S|sigma> = (-1)^{s(sigma)}|sigma> built from a
+QECSignHead, training a POSITIVE ansatz A_theta on
+
+    H~ = S H S,   H~_{sigma sigma'} = (-1)^{s(sigma)+s(sigma')} H_{sigma sigma'}
+
+is EXACTLY the same optimization as training the signed ansatz
+psi = (-1)^s A_theta on H: the sampling distribution (|psi|^2 = A^2), every
+local energy, and every log-derivative O_k = d log A / d theta coincide
+number-for-number (S carries no parameters). The equivalence witness is
+formulation A (honeycomb_networks.SignedModel) + scripts/ab_equivalence.py.
+
+Implementation: a thin DiscreteOperator wrapper whose get_conn_padded delegates
+to the wrapped operator and multiplies the returned matrix elements by
+sign(sigma)*sign(sigma'). This runs on the host numpy path netket already uses
+for numba operators (PauliStrings), which is also where pymatching lives -- the
+sampler never sees the head and stays fully on-device. Verified against netket
+3.16.1.post1: MCState.expect on a trivial-sign wrapper reproduces the wrapped
+operator BITWISE, and VMC_SRt drives the wrapper directly.
+
+Real in, real out: the wrapped honeycomb Hamiltonians are exactly real and the
+signs are +-1, so E_loc stays float64 (no complex-JIT tax).
+"""
+
+import numpy as np
+import netket as nk
+
+
+class SignFramedOperator(nk.operator.DiscreteOperator):
+    """S @ op @ S for a diagonal sign function sigma -> +-1."""
+
+    def __init__(self, op, head):
+        super().__init__(op.hilbert)
+        self._op = op
+        self._head = head
+
+    @property
+    def dtype(self):
+        return self._op.dtype
+
+    @property
+    def is_hermitian(self):
+        return True
+
+    @property
+    def max_conn_size(self):
+        return self._op.max_conn_size
+
+    def get_conn_padded(self, x):
+        xp, mels = self._op.get_conn_padded(x)
+        x = np.asarray(x)
+        xp_np = np.asarray(xp)
+        s = self._head.sign_pm1(x.reshape(-1, x.shape[-1])).reshape(x.shape[:-1])
+        sp = self._head.sign_pm1(xp_np.reshape(-1, xp_np.shape[-1])) \
+            .reshape(xp_np.shape[:-1])
+        return xp, mels * s[..., None] * sp
+
+    def __repr__(self):
+        return f"SignFramedOperator(S @ {self._op!r} @ S)"

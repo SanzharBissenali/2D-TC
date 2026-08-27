@@ -303,9 +303,13 @@ def run_minsr(
     # solve by construction); later netkets renamed it VMC_SR(use_ntk=True). Try
     # the pinned-env name first.
     opt = optax.sgd(schedule)
+    # --minsr_mode: optional jacobian_mode override ('' => netket auto-detects;
+    # 'complex' on a real arm tightens Phase-4 A/B trajectory comparability).
+    jac_mode = config.get('minsr_mode', '') or None
     try:
         from netket.experimental.driver import VMC_SRt
         driver = VMC_SRt(hamiltonian, opt, diag_shift=diag_shift,
+                         jacobian_mode=jac_mode,
                          variational_state=vstate)
     except ImportError:                                      # netket >= 3.17
         try:

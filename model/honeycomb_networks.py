@@ -169,6 +169,28 @@ class HoneycombInvariantCNN(nn.Module):
         return nn.elu(x)
 
 
+class SignedModel(nn.Module):
+    """Phase-4 formulation A (equivalence witness -- production is the
+    sign-framed operator, model/sign_frame.py): log psi = log A + 1j*pi*s(x),
+    s = QECSignHead loop parity in {0,1}. Real params -> complex output; the
+    head is a host callback on the INPUT only, so AD w.r.t. params never
+    touches it (zero gradient by construction) and sampling still sees
+    |psi| = A through Re(log psi). Wraps the WHOLE batched network (above
+    Sequential's internal vmap) so the callback fires once per batch."""
+
+    base: nn.Module
+    head_s01: Any            # QECSignHead.s01 -- static (host) callable
+
+    @nn.compact
+    def __call__(self, x):
+        log_a = self.base(x)
+        s = jax.pure_callback(
+            lambda xb: np.asarray(self.head_s01(xb), dtype=np.float64),
+            jax.ShapeDtypeStruct(x.shape[:-1], jnp.float64),
+            x, vmap_method='expand_dims')
+        return log_a + 1j * jnp.pi * s
+
+
 # --------------------------------------------------------------------------
 # assembly
 # --------------------------------------------------------------------------

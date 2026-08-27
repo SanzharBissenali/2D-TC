@@ -68,6 +68,8 @@ def _tags(config):
     if config.get("lattice", "square") != "square":
         tags.append(config.get("lattice"))
         tags.append(config.get("model", "tc"))
+    if config.get("sign_head", "none") != "none":
+        tags.append(f"sign-{config.get('sign_head')}-{config.get('sign_impl', 'operator')}")
     return tags
 
 
