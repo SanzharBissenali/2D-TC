@@ -200,6 +200,9 @@ def parse_arguments() -> Dict[str, Any]:
     parser.add_argument('--n_sweeps', type=int, help='Number of subsampling steps (defaults to N/2)')
     parser.add_argument('--n_samples_fin', type=int, required=True, help='Final number of samples')
     parser.add_argument('--use_custom_sampler', action='store_true', help='Use custom sampler with vertex updates')
+    parser.add_argument('--complex_ansatz', action='store_true',
+                        help='Honeycomb: use the complex-CNN arm (dtype=complex) even though '
+                             'H is real -- the Phase-3 cnn-complex arm for the signful DS GS')
     
     # Parse arguments
     if len(sys.argv) <= 12:  # Check if using old positional arguments format
@@ -367,8 +370,11 @@ def parse_arguments() -> Dict[str, Any]:
         # Both honeycomb Hamiltonians are exactly real: the DS leg/projector dressing
         # assembles to real Pauli weights (even Y-count per string), and hy is
         # excluded above. The DS ground state is real-but-SIGNFUL ((-1)^{#loops});
-        # dtype governs the operator/ansatz reals, not the sign representability.
-        args['dtype'] = "float64"
+        # a float64 Combo is strictly positive and provably cannot represent it
+        # (Hastings) -- --complex_ansatz opts into the complex-CNN arm (Phase-3
+        # cnn-complex: the empirical "can a generic phase head learn the signs"
+        # question, with no theorem either way).
+        args['dtype'] = "complex" if args.get('complex_ansatz', False) else "float64"
     elif args.get('tf_complex_output', False) and args.get('symmetric_block', 'cnn') in ('transformer', 'full_transformer'):
         args['dtype'] = "float64"
     # The fermionic TC (--ftc) is real but non-stoquastic. Sign structure of the exact
