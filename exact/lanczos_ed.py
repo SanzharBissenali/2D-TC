@@ -31,7 +31,7 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
-def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None):
+def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0):
     """Direct scipy Lanczos for the honeycomb models -- bypasses netket's
     Pauli->sparse conversion, whose intermediates OOM at 2^27 (observed: job
     57315881 lost even the 7-pattern TC h=0 build to exit 137 on the 55 GB
@@ -117,7 +117,10 @@ def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None):
     # (jobs 57338156/62 hit 1:45 walls at 2^27 while the non-degenerate DS
     # points converged in ~50 min). A larger Krylov block (ncv ~ 48) is the fix;
     # memory cost is ncv vectors (1 GB each at 2^27) -- regular-node territory.
-    evals, evecs = eigsh(H, k=k, which="SA", ncv=ncv)
+    # tol=0 (default) = ARPACK machine precision, as in the ED campaign.
+    # A loose tol (~1e-8) cuts iterations for vector-consumers that only
+    # need amplitude signs (scripts/sign_fidelity.py) inside debug walltime.
+    evals, evecs = eigsh(H, k=k, which="SA", ncv=ncv, tol=tol)
     order = np.argsort(evals)
     return evals[order], np.asarray(evecs[:, order[0]])
 
