@@ -13,7 +13,8 @@ with this head can reach (the optimal amplitude zeroes the wrong-sign
 configs), so it is the head's ceiling. Baseline: F_plus = weight of positive
 amplitudes = the ceiling of the sign-free (Hastings-floor) ansatz.
 
-Pre-registered predictions (physics discussion, 2026-08-27):
+Pre-registered predictions (physics discussion, 2026-08-27; model=ds -- for
+tc the head is deliberately wrong and only the F_plus baseline is meaningful):
   - hx = 0 (any hz, incl. 0): F_s = 1 exactly -- the GS never leaves the
     zero-charge sector, where the head is the exact (-1)^{#loops} sign.
   - hx != 0: F_s < 1; errors concentrated on defected (off-sector) configs
@@ -27,8 +28,11 @@ is anchored at the all-up amplitude (positive in the (-1)^{#loops} gauge).
 The MWPM tie-breaking is probed by decoding twice with two opposite tiny
 deterministic weight perturbations (eta * link_index); minimal-cardinality
 recoveries are preserved (eta * N^2 << 1) but ties resolve differently.
-The weight where the two tie-breakings give DIFFERENT signs bounds the
-tie-sensitive part of the head.
+The weight where the two tie-breakings give DIFFERENT signs LOWER-bounds the
+tie-sensitive part of the head: both perturbations are linear in the link
+index, so recoveries degenerate in sum-of-link-indices stay tied under both
+(adversarial probe, 1x2 exhaustive: 440/540 sign-ties detected; the missed
+weight was 1.4e-14 vs 4.7e-10 detected, ~0.003% relative).
 
 Local sizes (full 2^N enumeration): 1x2 (N=11), 3x1 (N=16), 2x2 (N=19).
 2x3 (N=27) needs an exclusive cluster node (jobs/nersc_signfid.sh).
@@ -215,7 +219,9 @@ def main():
               flush=True)
 
     if args.out:
-        os.makedirs(os.path.dirname(args.out), exist_ok=True)
+        outdir = os.path.dirname(args.out)
+        if outdir:
+            os.makedirs(outdir, exist_ok=True)
         with open(args.out, "w") as f:
             json.dump({"Lx": args.Lx, "Ly": args.Ly, "model": args.model,
                        "N": g.N, "head": "MWPM(unit weights) + count_loops",
