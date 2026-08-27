@@ -676,9 +676,32 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   decodes × 134M configs) + hx ED ~13 min ⇒ 31 min total JUST misses debug 30-min
   wall — hx points need `-q regular -t 1:30`; light (h0/hz) points fit debug.
   lanczos_ed gained optional `tol` (default 0, unchanged); pymatching installed in
-  2dtc env + local venv. NEXT: wire the head into the NQS (multiply into the Combo,
-  MCMC over |A|², sign enters E_loc ratios) and re-run the Phase-3 h=0 arms — DS
-  must now smash the Hastings floors to TC-grade error; then hz/hx field arms.
+  2dtc env + local venv.
+- **Phase 4 RESULT (2026-08-27, jobs 57653805/809): HASTINGS FLOORS SMASHED —
+  DS at h=0 reaches TC-grade precision with the deterministic head.** Wiring
+  (commit 2f5c199): `model/sign_head.QECSignHead` (frozen decoder-A MWPM + 2^F
+  loop-sign table); TWO exactly-equivalent formulations, both implemented per
+  user requirement — **B (production)** `model/sign_frame.SignFramedOperator`:
+  train the positive real Combo on H̃=SHS (mels × sign(σ)sign(σ'), host numba
+  path; sampler/dtype/QGT byte-identical to Phase 3); **A (witness)**
+  `honeycomb_networks.SignedModel`: logψ += iπ·s via jax.pure_callback (R→C).
+  Flags `--sign_head {none,qec}` / `--sign_impl {operator,model}` /
+  `--minsr_mode`; hexflip gate runs on the base net; off-diagonal observables
+  re-framed (SOS) under impl operator only. `scripts/ab_equivalence.py` (1×2,
+  synced params): Re logψ and per-config Re E_loc BITWISE equal, Im=πs exact,
+  imag dust = sin(π)=1.2e-16, 150-step paired trajectories identical to 1e-15,
+  E=−11.99 through the −11.414 floor. **Cluster (2×2 both arms + 2×3 cnnqB,
+  350 steps, Phase-3 recipe): E_tail −20.000000002 (rel 8e-11, V 1e-14, cnnqA)
+  / −19.999999992 (rel 4e-10, cnnqB) / −28.000000016 (rel 6e-10, V 1e-12,
+  2×3) — all THROUGH the floors (−19.56995/−27.21900); ⟨plaq_term⟩=−1.000000
+  exactly (floor state: −0.8924), ⟨Q_v⟩=1.** In-vivo A/B trajectories differ
+  early (max|dE| 0.74) ONLY because flax folds init RNG by module path
+  ('base/...' vs bare ⇒ different Block-3 draws — the harness syncs params,
+  main.py arms don't), converging to the same state (median |dE| 1e-6). W&B
+  group hc-phase4-h0. NEXT (Phase 3b/4 fields): hz arm (head exact, any hz);
+  hx arm (ceiling = gate-0 F_s, energy cost ~(1−F_s)·spread ≈ 1e-10 at
+  hx=0.1); optional learned residual = Phase 4b; then the 3D port (recursion
+  form of the head).
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
