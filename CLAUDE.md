@@ -712,8 +712,40 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   1.7e-5..3e-3 say the 350-step budget is the limiter — more steps/samples
   would shrink it; vs the positive-ansatz ceiling (F_plus≈0.125 ⇒ %-level)
   the head wins 3-4 orders everywhere. No NaN/divergence anywhere. Phase 4
-  CLOSED at 2D scope. NEXT: optional Phase 4b learned residual (only if a
-  future hx push needs it); the 3D port (recursion form of the head).
+  CLOSED at 2D scope.
+- **Phase 4b (2026-08-28, commits e50c0e3/950b3c6): three sign arms across the
+  (hx,hz) plane — campaign LAUNCHED, results pending.** Arms: `cnnqB` (real
+  trunk + head, production), `cnnqC` (`--complex_ansatz --sign_head qec
+  --sign_impl operator` — complex trunk on the framed H̃), `cnnqR`
+  (`--sign_impl residual --res_hidden 16` — real trunk + head + tie-gated
+  residual phase MLP: logψ += i(πs + t·MLP(s,d,r)), zero-init ⇒ step 0
+  bitwise == head-only; t-gate ⇒ theorem regime untouchable by training).
+  sign_head.py gained decoder-B + `features()` = [s, d, r=ε_A⊕ε_B, t].
+  **Ceiling map (25-pt 2×2 grid {0,.2,.4,.6,.8}², signfid_hc2x2_ds_grid.json):
+  F_s = 1 exactly on the whole hz axis; ≥ 0.9975 EVERYWHERE — the head prior
+  survives far outside the topological phase; C/R have room only in the
+  hx≳0.6 band; F_plus stays ~0.12 along the hx axis.** 3-agent swarm:
+  features() PASS (exhaustive brute force incl. all-2^N-subset recovery
+  enumeration; zero false tie flags; r always a valid even-degree cycle);
+  wiring PASS (asserts loud; all 3 arms end-to-end at 1×2; gate base-routing;
+  cnnqR params = base+369 pre-fix/385 post-fix); expressivity oracle FOUND A
+  REAL DESIGN FLAW — r is a deterministic function of d (the decoder sees
+  only the syndrome) and tie partners share d, so a (d,r)-MLP provably cannot
+  split tie pairs (fixes only 40/14/2.4% of the head gap at 1×2); FIXED by
+  feeding s into the MLP (950b3c6). At 2×2 the s-class recovers 86-97% of the
+  head gap (7-36× error cut) but genuine (s,d,r) collisions cap it above the
+  gate ceiling (weight-suppressed: 4e-8/3e-6 at (0.2,0.2)/(0.5,0.5)) — exact
+  saturation would need config-dependent (non-syndrome-derived) features =
+  future design. **In queue (Perlmutter partitions DOWN for maintenance at
+  submit time):** 16 wave jobs 57670508-527 (2×2: 25 pts × B/R in 4 chunks
+  each + C in 5 chunks; 2×3 diagonal mixed pts × R(1)/C(2)); debug smoke
+  57670501 (cnnqC+cnnqR@1×2 — its agent verifies + deletes artifacts);
+  yesterday's 2×3 mixed ED (57670296-301) + cnnqB NQS (57670302). Grade with
+  scripts/phase4b_summary.py (ceiling columns built in); heatmap notebook
+  analysis/05_phase4b_plane.ipynb still to write. cnnqC straggler risk: 5-pt
+  complex chunks may bust 2:30 — resubmit, skip-if-complete resumes. NEXT
+  after grading: verdict in CLAUDE.md, W&B sync (group hc-phase4b-plane),
+  then the 3D port (recursion form of the head).
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
