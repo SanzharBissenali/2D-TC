@@ -698,10 +698,22 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   early (max|dE| 0.74) ONLY because flax folds init RNG by module path
   ('base/...' vs bare ⇒ different Block-3 draws — the harness syncs params,
   main.py arms don't), converging to the same state (median |dE| 1e-6). W&B
-  group hc-phase4-h0. NEXT (Phase 3b/4 fields): hz arm (head exact, any hz);
-  hx arm (ceiling = gate-0 F_s, energy cost ~(1−F_s)·spread ≈ 1e-10 at
-  hx=0.1); optional learned residual = Phase 4b; then the 3D port (recursion
-  form of the head).
+  group hc-phase4-h0.
+- **Phase 4 FIELD RESULT (2026-08-28, jobs 57655134/137/142/144, 13/13
+  COMPLETED, W&B hc-phase4-fields): the head is nowhere the bottleneck.**
+  cnnqB, Phase-3 recipe, all vs exact E0 refs (signfid JSONs + ED files).
+  **hz line (head provably exact): TC-grade** — 2×2 rel-err 2.5e-9/2.3e-10/
+  7.7e-8 at hz 0.1/0.2/0.5; 2×3 4.9e-9/8.2e-9 at 0.1/0.2; Qv=1.00000 exactly
+  (sector theorem in vivo); ⟨plaq⟩ tracks −0.905→−0.331. **hx line:
+  optimization-limited, NOT head-limited** — rel-err 6.4e-6/3.0e-5/1.1e-4/
+  3.3e-4 at 2×2 hx 0.1/0.2/0.3/0.5 (2×3: 5.5e-7/5.2e-5/1.4e-4 at 0.1/0.2/0.3;
+  mixed (0.1,0.1): 2.7e-6). Gate-0 head ceiling is 3-4 orders BELOW these
+  (2e-10 rel at hx=0.1; ≲5% of the error even at hx=0.5) and V-scores
+  1.7e-5..3e-3 say the 350-step budget is the limiter — more steps/samples
+  would shrink it; vs the positive-ansatz ceiling (F_plus≈0.125 ⇒ %-level)
+  the head wins 3-4 orders everywhere. No NaN/divergence anywhere. Phase 4
+  CLOSED at 2D scope. NEXT: optional Phase 4b learned residual (only if a
+  future hx push needs it); the 3D port (recursion form of the head).
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
