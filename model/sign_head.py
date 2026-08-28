@@ -56,6 +56,10 @@ class QECSignHead:
         pert = TIE_ETA * np.arange(self.N)
         assert pert.max() * self.N < 0.5, "tie perturbation could reorder cardinalities"
         self._matching = Matching.from_check_matrix(Hchk, weights=1.0 + pert)
+        # decoder B (reversed tie-break, sign_fidelity's second decoder):
+        # used ONLY by features() to flag tie-degenerate configs -- the
+        # production sign s01/sign_pm1 stays pure decoder-A.
+        self._matching_b = Matching.from_check_matrix(Hchk, weights=1.0 + pert[::-1])
 
         # (-1)^{#loops} on the whole zero-charge sector, keyed by config int
         # (2^F entries -- the hexagon flips enumerate the sector bijectively).
@@ -79,6 +83,24 @@ class QECSignHead:
             f"expected {self.N} sites, got {states.shape[-1]}"
         return (states.reshape(-1, self.N) < 0).astype(np.uint8)
 
+    def _syndrome(self, bits):
+        synd = np.zeros((bits.shape[0], self.V), dtype=np.uint8)
+        for v in range(self.V):
+            for l in self._vertex_all[v]:
+                if l != -1:
+                    synd[:, v] ^= bits[:, int(l)]
+        return synd
+
+    def _decode(self, matching, bits, synd):
+        """(loop parity s01, correction bit rows) for one decoder."""
+        corr = matching.decode_batch(synd).astype(np.int64)
+        recovered = (bits.astype(np.int64) @ self._bit_values) \
+            ^ (corr @ self._bit_values)
+        s = np.empty(bits.shape[0], dtype=np.float64)
+        for i, x in enumerate(recovered):
+            s[i] = self._s01_table[int(x)]     # KeyError == recovery failed
+        return s, corr
+
     def s01(self, states):
         """Loop parity s(sigma) in {0., 1.} for a batch of +-1 configs.
 
@@ -87,19 +109,38 @@ class QECSignHead:
         states = np.asarray(states)
         lead = states.shape[:-1]
         bits = self._bits(states)
-        synd = np.zeros((bits.shape[0], self.V), dtype=np.uint8)
-        for v in range(self.V):
-            for l in self._vertex_all[v]:
-                if l != -1:
-                    synd[:, v] ^= bits[:, int(l)]
-        corr = self._matching.decode_batch(synd).astype(np.int64)
-        recovered = (bits.astype(np.int64) @ self._bit_values) \
-            ^ (corr @ self._bit_values)
-        out = np.empty(bits.shape[0], dtype=np.float64)
-        for i, x in enumerate(recovered):
-            out[i] = self._s01_table[int(x)]   # KeyError == recovery failed
-        return out.reshape(lead)
+        s, _ = self._decode(self._matching, bits, self._syndrome(bits))
+        return s.reshape(lead)
 
     def sign_pm1(self, states):
         """(-1)^{s(sigma)} in {+1., -1.} with the input's leading shape."""
         return 1.0 - 2.0 * self.s01(states)
+
+    # -- residual-arm features (Phase 4b) --------------------------------
+    @property
+    def n_features(self):
+        """Width K of features(): [s, d (V), r (N), t]."""
+        return 1 + self.V + self.N + 1
+
+    def features(self, states):
+        """Decoder-derived features, shape lead + (K,), float64 in {0,1}.
+
+        Columns [s, d, r, t]: s = decoder-A loop parity (== s01, the
+        production head); d = Q_v syndrome bits; r = eps_A XOR eps_B, the
+        ambiguity cycle where the two minimal recoveries disagree (zeros when
+        they coincide); t = 1 iff the two decoders' loop PARITIES differ --
+        the tie flag gating the residual phase. t is a LOWER-bound tie
+        detector (linear-in-index perturbations miss sum-degenerate ties,
+        measured ~0.003% of tie weight -- documented in sign_fidelity).
+        """
+        states = np.asarray(states)
+        lead = states.shape[:-1]
+        bits = self._bits(states)
+        synd = self._syndrome(bits)
+        s_a, corr_a = self._decode(self._matching, bits, synd)
+        s_b, corr_b = self._decode(self._matching_b, bits, synd)
+        r = np.bitwise_xor(corr_a, corr_b).astype(np.float64)
+        t = (s_a != s_b).astype(np.float64)
+        out = np.concatenate(
+            [s_a[:, None], synd.astype(np.float64), r, t[:, None]], axis=1)
+        return out.reshape(lead + (self.n_features,))

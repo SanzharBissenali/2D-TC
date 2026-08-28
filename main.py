@@ -176,6 +176,14 @@ def main():
                 sign_frame_head = head
                 print(f"[sign head] qec/operator: training on H~ = SHS "
                       f"(loop table 2^{head.F}, decoder-A MWPM)")
+            elif config.get('sign_impl') == 'residual':
+                from model.honeycomb_networks import ResidualSignedModel
+                model = ResidualSignedModel(base_model, head.features,
+                                            head.n_features,
+                                            hidden=config.get('res_hidden', 16))
+                print(f"[sign head] qec/residual: log psi += i*(pi*s + phi_chi), "
+                      f"tie-gated MLP hidden={config.get('res_hidden', 16)} over "
+                      f"K={head.n_features} decoder features (zero-init phi)")
             else:
                 from model.honeycomb_networks import SignedModel
                 model = SignedModel(base_model, head.s01)
@@ -303,7 +311,7 @@ def main():
             # covariance), so the wrapped model would trivially fail it.
             gate_model, gate_params = model, vs.parameters
             if config.get('sign_head', 'none') != 'none' \
-                    and config.get('sign_impl', 'operator') == 'model':
+                    and config.get('sign_impl', 'operator') in ('model', 'residual'):
                 gate_model, gate_params = base_model, vs.parameters['base']
             clusters = [list(map(int, p)) for p in geometry.plaq_all]
             dev0 = _check_flip_invariance(gate_model, gate_params, geometry.N,

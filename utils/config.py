@@ -207,11 +207,14 @@ def parse_arguments() -> Dict[str, Any]:
                         help="Phase-4 deterministic sign head (honeycomb ds only): 'qec' = "
                              "Q_v syndrome -> MWPM recovery -> (-1)^{#loops} (model/sign_head.py). "
                              "Default 'none' is byte-identical to Phase 3.")
-    parser.add_argument('--sign_impl', choices=['operator', 'model'], default='operator',
+    parser.add_argument('--sign_impl', choices=['operator', 'model', 'residual'], default='operator',
                         help="How the sign head enters: 'operator' (production) trains the "
                              "positive real Combo on the sign-framed H~ = SHS; 'model' "
                              "(equivalence witness) adds 1j*pi*s(sigma) to log psi via "
-                             "jax.pure_callback. Mathematically identical; see sign_frame.py.")
+                             "jax.pure_callback; 'residual' (Phase 4b) = 'model' plus the "
+                             "tie-gated residual phase MLP over decoder features.")
+    parser.add_argument('--res_hidden', type=int, default=16,
+                        help='Hidden width of the Phase-4b residual phase MLP (sign_impl residual)')
     parser.add_argument('--minsr_mode', choices=['', 'real', 'complex', 'holomorphic'], default='',
                         help="Optional VMC_SRt jacobian_mode override ('' = netket auto). "
                              "'complex' on a real arm tightens A/B trajectory comparability.")
@@ -252,6 +255,7 @@ def parse_arguments() -> Dict[str, Any]:
             'lr_schedule': 'const',
             'sign_head': 'none',
             'sign_impl': 'operator',
+            'res_hidden': 16,
             'minsr_mode': '',
             'lr_final_frac': 0.1,
             'optimizer': 'tdvp',
@@ -360,12 +364,19 @@ def parse_arguments() -> Dict[str, Any]:
         )
         if args.get('sign_head', 'none') != 'none':
             # The QEC head is DS-specific ((-1)^{#loops} on the recovered
-            # config -- deliberately WRONG for tc) and pairs with the positive
-            # real Combo; the complex arm would double-count the sign burden.
+            # config -- deliberately WRONG for tc).
             assert args.get('model', 'tc') == 'ds', \
                 "--sign_head qec is defined for the doubled semion (--model ds) only"
-            assert not args.get('complex_ansatz', False), \
-                "--sign_head qec pairs with the positive float64 Combo (drop --complex_ansatz)"
+            # Phase-4b arms: a COMPLEX trunk on top of the head (cnnqC) is
+            # allowed only via the framed-operator impl (in the model impls
+            # the head is already a phase term); the residual MLP (cnnqR)
+            # requires the real trunk (complex trunk + residual is redundant).
+            if args.get('complex_ansatz', False):
+                assert args.get('sign_impl', 'operator') == 'operator', \
+                    "--complex_ansatz + --sign_head qec: use --sign_impl operator (arm cnnqC)"
+            if args.get('sign_impl', 'operator') == 'residual':
+                assert not args.get('complex_ansatz', False), \
+                    "--sign_impl residual pairs with the real trunk (drop --complex_ansatz)"
             assert args.get('architecture', 'Combo') == 'Combo', \
                 "--sign_head qec: use the Combo arm (PlainCNN has no role here)"
     else:
@@ -482,6 +493,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "model": [config.get("model", "tc")],
             "sign_head": [config.get("sign_head", "none")],
             "sign_impl": [config.get("sign_impl", "operator")],
+            "res_hidden": [config.get("res_hidden", 16)],
             "minsr_mode": [config.get("minsr_mode", "")],
             "Lx": [config["Lx"]],
             "Ly": [config["Ly"]],

@@ -53,6 +53,8 @@ fi
 declare -A ARM_FLAGS
 ARM_FLAGS[cnnqB]="--sign_head qec --sign_impl operator"
 ARM_FLAGS[cnnqA]="--sign_head qec --sign_impl model"
+ARM_FLAGS[cnnqC]="--complex_ansatz --sign_head qec --sign_impl operator"  # complex trunk + head
+ARM_FLAGS[cnnqR]="--sign_head qec --sign_impl residual"                   # + tie-gated phase MLP
 ARM_FLAGS[cnn]=""    # sign-free positive control (expected to FAIL the DS floors)
 for arm in $ARMS; do
     [ -n "${ARM_FLAGS[$arm]+set}" ] || { echo "!!! unknown arm '$arm' (known: ${!ARM_FLAGS[*]})"; exit 1; }

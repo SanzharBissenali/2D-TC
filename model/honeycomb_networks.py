@@ -191,6 +191,39 @@ class SignedModel(nn.Module):
         return log_a + 1j * jnp.pi * s
 
 
+class ResidualSignedModel(nn.Module):
+    """Phase-4b arm cnnqR: real trunk + QEC head + tie-gated residual phase.
+
+    log psi = log A_theta(x) + 1j*(pi*s(x) + phi_chi(x)), with
+    phi_chi = t(x) * w2 . tanh(W1 [d, r] + b1): a tiny real MLP over
+    DECODER-DERIVED features (syndrome bits d, ambiguity cycle r = eps_A XOR
+    eps_B) whose zero-init output layer makes phi == 0 at init (step 0 is
+    exactly the head-only ansatz) and whose multiplicative tie gate t makes
+    phi == 0 EXACTLY on every un-tied config forever -- the theorem regime
+    (on-sector, the whole hz axis) is untouchable by training. Real params,
+    complex output (non-holomorphic QGT); trained on the BARE Hamiltonian
+    (head + residual both live in the model, formulation-A path).
+    """
+
+    base: nn.Module
+    head_features: Any       # QECSignHead.features -- static (host) callable
+    n_features: int          # QECSignHead.n_features (K = 1 + V + N + 1)
+    hidden: int = 16
+
+    @nn.compact
+    def __call__(self, x):
+        log_a = self.base(x)
+        u = jax.pure_callback(
+            lambda xb: np.asarray(self.head_features(xb), dtype=np.float64),
+            jax.ShapeDtypeStruct(x.shape[:-1] + (self.n_features,), jnp.float64),
+            x, vmap_method='expand_dims')
+        s, dr, t = u[..., 0], u[..., 1:-1], u[..., -1]
+        h = nn.tanh(nn.Dense(self.hidden, param_dtype=jnp.float64)(dr))
+        phi = t * nn.Dense(1, kernel_init=nn.initializers.zeros,
+                           param_dtype=jnp.float64)(h)[..., 0]
+        return log_a + 1j * (jnp.pi * s + phi)
+
+
 # --------------------------------------------------------------------------
 # assembly
 # --------------------------------------------------------------------------
