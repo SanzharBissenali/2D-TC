@@ -1787,5 +1787,657 @@
       "imag": 3.952415063116169e-18
     },
     "runtime": 78.09394931793213
+  },
+  {
+    "run_id": "ecc734ab",
+    "timestamp": "2026-08-28 15:56:34",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.2,
+      "hy": 0.0,
+      "hz": 0.2,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_hx0.2_hz0.2_cnnqB.json",
+        "G-equiv_1_hc2x3_ds_hx0.2_hz0.2_cnnqB.mpack"
+      ]
+    },
+    "n_params": 19017,
+    "final_energy": -29.897657073204424,
+    "runtime": 1479.3064250946045
+  },
+  {
+    "run_id": "1c592731",
+    "timestamp": "2026-08-28 16:12:30",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0_hz0_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0_hz0_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -20.000000517236924,
+    "runtime": 666.1161124706268
+  },
+  {
+    "run_id": "5fa8e6a9",
+    "timestamp": "2026-08-28 16:21:19",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.3,
+      "hy": 0.0,
+      "hz": 0.3,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_hx0.3_hz0.3_cnnqB.json",
+        "G-equiv_1_hc2x3_ds_hx0.3_hz0.3_cnnqB.mpack"
+      ]
+    },
+    "n_params": 19017,
+    "final_energy": -32.15287799820459,
+    "runtime": 1471.6883699893951
+  },
+  {
+    "run_id": "d7fdb4e2",
+    "timestamp": "2026-08-28 16:23:55",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.4,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0_hz0.4_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0_hz0.4_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -24.414969924031872,
+    "runtime": 672.4775524139404
+  },
+  {
+    "run_id": "ecdca2ab",
+    "timestamp": "2026-08-28 16:33:24",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.6,
+      "hy": 0.0,
+      "hz": 0.8,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.6_hz0.8_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.6_hz0.8_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -32.782504292775734,
+    "runtime": 696.5100030899048
+  },
+  {
+    "run_id": "f888f334",
+    "timestamp": "2026-08-28 16:33:29",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.2,
+      "hy": 0.0,
+      "hz": 0.4,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.4_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.4_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -24.55794151829675,
+    "runtime": 703.3400294780731
+  },
+  {
+    "run_id": "61bb0c97",
+    "timestamp": "2026-08-28 16:33:29",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.4,
+      "hy": 0.0,
+      "hz": 0.6,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.4_hz0.6_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.4_hz0.6_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -28.496889309500816,
+    "runtime": 703.5283229351044
+  },
+  {
+    "run_id": "f635fc1f",
+    "timestamp": "2026-08-28 16:34:56",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.6,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0_hz0.6_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0_hz0.6_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -27.950154523422622,
+    "runtime": 647.8618938922882
+  },
+  {
+    "run_id": "c75e055a",
+    "timestamp": "2026-08-28 16:37:38",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0_hz0_cnnqR.json",
+        "G-equiv_1_hc2x2_ds_hx0_hz0_cnnqR.mpack"
+      ]
+    },
+    "n_params": 13098,
+    "final_energy": {
+      "real": -19.99999999823617,
+      "imag": -6.577621895062764e-19
+    },
+    "runtime": 955.1551072597504
+  },
+  {
+    "run_id": "4fe27925",
+    "timestamp": "2026-08-28 16:45:21",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.4,
+      "hy": 0.0,
+      "hz": 0.8,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.4_hz0.8_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.4_hz0.8_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -32.132614116263156,
+    "runtime": 698.8542349338531
+  },
+  {
+    "run_id": "887c3bf4",
+    "timestamp": "2026-08-28 16:45:29",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.2,
+      "hy": 0.0,
+      "hz": 0.6,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.6_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.6_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -28.087598822619753,
+    "runtime": 706.565089225769
+  },
+  {
+    "run_id": "45d865a0",
+    "timestamp": "2026-08-28 16:45:46",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.8,
+      "hy": 0.0,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.8_hz0_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.8_hz0_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -22.179692237023982,
+    "runtime": 728.8371002674103
+  },
+  {
+    "run_id": "79bc0207",
+    "timestamp": "2026-08-28 16:46:17",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.8,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0_hz0.8_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0_hz0.8_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -31.61442482066965,
+    "runtime": 669.2210931777954
+  },
+  {
+    "run_id": "c006061f",
+    "timestamp": "2026-08-28 16:47:26",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.35,
+      "hy": 0.0,
+      "hz": 0.3,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_hx0.35_hz0.3_cnnqB.json",
+        "G-equiv_1_hc2x3_ds_hx0.35_hz0.3_cnnqB.mpack"
+      ]
+    },
+    "n_params": 19017,
+    "final_energy": -32.31185601918105,
+    "runtime": 1553.8832385540009
+  },
+  {
+    "run_id": "3e6e9a8d",
+    "timestamp": "2026-08-28 16:53:44",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.0,
+      "hz": 0.2,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0_hz0.2_cnnqR.json",
+        "G-equiv_1_hc2x2_ds_hx0_hz0.2_cnnqR.mpack"
+      ]
+    },
+    "n_params": 13098,
+    "final_energy": {
+      "real": -21.32003883793076,
+      "imag": 5.60688649418793e-18
+    },
+    "runtime": 954.1088583469391
+  },
+  {
+    "run_id": "809f2ae7",
+    "timestamp": "2026-08-28 16:59:20",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.2,
+      "hy": 0.0,
+      "hz": 0.8,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.8_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.8_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -31.746031049970078,
+    "runtime": 784.707535982132
+  },
+  {
+    "run_id": "3191c439",
+    "timestamp": "2026-08-28 16:59:22",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.2,
+      "hy": 0.0,
+      "hz": 0.2,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.2_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.2_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -21.462660407906746,
+    "runtime": 744.2672965526581
+  },
+  {
+    "run_id": "1c99af81",
+    "timestamp": "2026-08-28 16:59:23",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.6,
+      "hy": 0.0,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.6_hz0_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.6_hz0_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -21.191013888116068,
+    "runtime": 794.1618404388428
+  },
+  {
+    "run_id": "3f1a78ad",
+    "timestamp": "2026-08-28 16:59:36",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.8,
+      "hy": 0.0,
+      "hz": 0.2,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.8_hz0.2_cnnqB.json",
+        "G-equiv_1_hc2x2_ds_hx0.8_hz0.2_cnnqB.mpack"
+      ]
+    },
+    "n_params": 12489,
+    "final_energy": -23.603990958675215,
+    "runtime": 784.6121084690094
   }
 ]
