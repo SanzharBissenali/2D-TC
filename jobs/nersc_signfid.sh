@@ -30,6 +30,10 @@ REPO=$SLURM_SUBMIT_DIR
 LX="${LX:-2}"; LY="${LY:-3}"; MODEL="${MODEL:-ds}"
 K="${K:-1}"; TOL="${TOL:-1e-8}"
 PTS="${POINTS:-0:0}"; PTS="${PTS//+/;}"; PTS="${PTS//:/,}"
+# Phase-4c decoder ladder: DECODERS='+'-separated list (default mwpm =
+# legacy single-decoder run); output filename gains a _dl tag when active.
+DECODERS="${DECODERS:-mwpm}"; DECODERS="${DECODERS//+/,}"
+TIESUM_DMAX="${TIESUM_DMAX:-10}"
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }
@@ -37,9 +41,11 @@ python -c "import pymatching" 2>/dev/null \
 OUT=$REPO/results/diagnostics
 mkdir -p "$OUT"
 TAG=$(echo "$PTS" | tr ';,' '__')
-echo "=== signfid ${LX}x${LY} $MODEL points=[$PTS] k=$K tol=$TOL ==="
+[ "$DECODERS" != "mwpm" ] && TAG="${TAG}_dl"
+echo "=== signfid ${LX}x${LY} $MODEL points=[$PTS] k=$K tol=$TOL decoders=[$DECODERS] ==="
 PYTHONPATH=$REPO python "$REPO/scripts/sign_fidelity.py" \
     --Lx "$LX" --Ly "$LY" --model "$MODEL" --points "$PTS" \
     --k "$K" --tol "$TOL" \
+    --decoders "$DECODERS" --tiesum_dmax "$TIESUM_DMAX" \
     --out "$OUT/signfid_hc${LX}x${LY}_${MODEL}_${TAG}.json"
 echo "=== signfid driver done ==="

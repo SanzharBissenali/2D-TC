@@ -37,6 +37,14 @@ ARMS="${ARMS:-cnnqB}"; ARMS="${ARMS//+/ }"
 POINTS="${POINTS:-0:0.1}"; POINTS="${POINTS//+/ }"
 SIM_TIME="${SIM_TIME:-3.5}"
 SEED="${SEED:-0}"
+# Phase-4c decoder ladder: DECODER != mwpm appends --decoder + a jobid suffix
+# (cnnqB-style operator arms only; asserted in config.py).
+DECODER="${DECODER:-mwpm}"
+DEC_FLAG=""; DEC_SUFFIX=""
+if [ "$DECODER" != "mwpm" ]; then
+    DEC_FLAG="--decoder $DECODER"
+    DEC_SUFFIX="_${DECODER}"
+fi
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }
@@ -64,7 +72,7 @@ echo "=== phase4-fields: ${LX}x${LY} ds points=[$POINTS] arms=[$ARMS] sim_time=$
 for pt in $POINTS; do
   hx="${pt%%:*}"; hz="${pt##*:}"
   for arm in $ARMS; do
-    jobid="hc${LX}x${LY}_ds_hx${hx}_hz${hz}_${arm}"
+    jobid="hc${LX}x${LY}_ds_hx${hx}_hz${hz}_${arm}${DEC_SUFFIX}"
     if [ -f "$OUTDIR/G-equiv_1_${jobid}.mpack" ]; then
         echo "=== skip $jobid (complete) ==="
         continue
@@ -78,7 +86,7 @@ for pt in $POINTS; do
         --sim_time "$SIM_TIME" --seed "$SEED" --kernel_size 2 \
         --n_samples_fin 8192 --use_custom_sampler \
         --channels_noninv 1,16 --channels_inv 16,8,1 \
-        ${ARM_FLAGS[$arm]} $WB_FLAGS ) \
+        ${ARM_FLAGS[$arm]} $DEC_FLAG $WB_FLAGS ) \
         || echo "!!! $jobid FAILED (exit $?) -- continuing"
   done
 done

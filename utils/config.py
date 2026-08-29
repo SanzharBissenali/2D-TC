@@ -213,6 +213,11 @@ def parse_arguments() -> Dict[str, Any]:
                              "(equivalence witness) adds 1j*pi*s(sigma) to log psi via "
                              "jax.pure_callback; 'residual' (Phase 4b) = 'model' plus the "
                              "tie-gated residual phase MLP over decoder features.")
+    parser.add_argument('--decoder', choices=['mwpm', 'anchor', 'greedy', 'unionfind', 'tie_sum'],
+                        default='mwpm',
+                        help="Phase-4c recovery rule inside the QEC sign head (model/decoders.py "
+                             "ladder). Default 'mwpm' is the frozen production head, byte-identical "
+                             "to Phase 4/4b. Non-mwpm decoders pair with --sign_impl operator only.")
     parser.add_argument('--res_hidden', type=int, default=16,
                         help='Hidden width of the Phase-4b residual phase MLP (sign_impl residual)')
     parser.add_argument('--minsr_mode', choices=['', 'real', 'complex', 'holomorphic'], default='',
@@ -255,6 +260,7 @@ def parse_arguments() -> Dict[str, Any]:
             'lr_schedule': 'const',
             'sign_head': 'none',
             'sign_impl': 'operator',
+            'decoder': 'mwpm',
             'res_hidden': 16,
             'minsr_mode': '',
             'lr_final_frac': 0.1,
@@ -379,11 +385,23 @@ def parse_arguments() -> Dict[str, Any]:
                     "--sign_impl residual pairs with the real trunk (drop --complex_ansatz)"
             assert args.get('architecture', 'Combo') == 'Combo', \
                 "--sign_head qec: use the Combo arm (PlainCNN has no role here)"
+            # Phase-4c decoder ladder: alternative decoders swap only the
+            # recovery rule inside the framed-operator head; the model /
+            # residual impls carry MWPM-specific machinery (pure_callback
+            # wiring validated on decoder A; features() = decoder A/B).
+            if args.get('decoder', 'mwpm') != 'mwpm':
+                assert args.get('sign_impl', 'operator') == 'operator', \
+                    "--decoder != mwpm pairs with --sign_impl operator only"
+        else:
+            assert args.get('decoder', 'mwpm') == 'mwpm', \
+                "--decoder is part of the QEC sign head (needs --sign_head qec)"
     else:
         assert args.get('model', 'tc') == 'tc', \
             "--model ds requires --lattice honeycomb (the doubled semion lives on the honeycomb)"
         assert args.get('sign_head', 'none') == 'none', \
             "--sign_head qec requires --lattice honeycomb --model ds"
+        assert args.get('decoder', 'mwpm') == 'mwpm', \
+            "--decoder is part of the QEC sign head (honeycomb ds only)"
 
     # --n_steps overrides sim_time (kept coupled so BOTH optimizer paths and the JSON
     # sim_params agree: n_iter is always derived as sim_time/dt).
@@ -493,6 +511,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "model": [config.get("model", "tc")],
             "sign_head": [config.get("sign_head", "none")],
             "sign_impl": [config.get("sign_impl", "operator")],
+            "decoder": [config.get("decoder", "mwpm")],
             "res_hidden": [config.get("res_hidden", 16)],
             "minsr_mode": [config.get("minsr_mode", "")],
             "Lx": [config["Lx"]],

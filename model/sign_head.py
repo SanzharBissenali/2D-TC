@@ -35,9 +35,16 @@ TIE_ETA = 1e-4  # decoder-A tie-break; minimality preserved while eta*N^2 < 1
 
 class QECSignHead:
     """Build once per run; ``s01``/``sign_pm1`` map batches of +-1 spin
-    configurations to {0,1} loop parities / +-1 signs."""
+    configurations to {0,1} loop parities / +-1 signs.
 
-    def __init__(self, geometry):
+    ``decoder`` selects the recovery rule (Phase 4c decoder ladder,
+    model/decoders.py): 'mwpm' (default) is the frozen production head,
+    byte-identical to Phase 4/4b; 'anchor'/'greedy'/'unionfind' swap the
+    correction while keeping syndrome + loop-parity machinery identical;
+    'tie_sum' replaces the single recovery by the coherent sign of the
+    degenerate minimal class (mwpm fallback beyond its caps)."""
+
+    def __init__(self, geometry, decoder='mwpm'):
         import scipy.sparse as sp
         from pymatching import Matching
 
@@ -76,6 +83,23 @@ class QECSignHead:
         assert len(table) == 1 << self.F, "hexagon flips are not independent?!"
         self._s01_table = table
 
+        self.decoder_name = str(decoder)
+        if self.decoder_name != 'mwpm':
+            from model.decoders import DECODER_NAMES, make_decoder
+            assert self.decoder_name in DECODER_NAMES, \
+                f"unknown decoder '{self.decoder_name}'"
+            self._alt = make_decoder(self.decoder_name, geometry)
+            # flat parity array (same values as _s01_table) -- vectorizes the
+            # alt-decoder parity lookups; -1 marks off-sector (asserted away)
+            self._s01_arr = None
+            if self.N <= 24:
+                arr = np.full(1 << self.N, -1, dtype=np.int8)
+                for x, s in table.items():
+                    arr[x] = s
+                self._s01_arr = arr
+        else:
+            self._alt = None
+
     def _bits(self, states):
         """(B, N) +-1 spins (any float/int dtype) -> (B, N) uint8 bits."""
         states = np.asarray(states)
@@ -101,6 +125,19 @@ class QECSignHead:
             s[i] = self._s01_table[int(x)]     # KeyError == recovery failed
         return s, corr
 
+    def _parity01_bits(self, bits):
+        """(K, N) uint8 zero-syndrome config bits -> {0., 1.} loop parities
+        via the sector table (used by the non-mwpm decoder paths)."""
+        x = bits.astype(np.int64) @ self._bit_values
+        if getattr(self, '_s01_arr', None) is not None:
+            s = self._s01_arr[x]
+            assert (s >= 0).all(), "recovery left the sector?!"
+            return s.astype(np.float64)
+        s = np.empty(bits.shape[0], dtype=np.float64)
+        for i, xi in enumerate(x):
+            s[i] = self._s01_table[int(xi)]    # KeyError == recovery failed
+        return s
+
     def s01(self, states):
         """Loop parity s(sigma) in {0., 1.} for a batch of +-1 configs.
 
@@ -109,7 +146,14 @@ class QECSignHead:
         states = np.asarray(states)
         lead = states.shape[:-1]
         bits = self._bits(states)
-        s, _ = self._decode(self._matching, bits, self._syndrome(bits))
+        synd = self._syndrome(bits)
+        if self._alt is None:                       # production mwpm path
+            s, _ = self._decode(self._matching, bits, synd)
+        elif self.decoder_name == 'tie_sum':
+            s, _, _, _ = self._alt.sign01(bits, synd, self._parity01_bits)
+        else:
+            corr = self._alt.corrections(synd).astype(np.uint8)
+            s = self._parity01_bits(bits ^ corr)
         return s.reshape(lead)
 
     def sign_pm1(self, states):
@@ -133,6 +177,9 @@ class QECSignHead:
         detector (linear-in-index perturbations miss sum-degenerate ties,
         measured ~0.003% of tie weight -- documented in sign_fidelity).
         """
+        assert self._alt is None, \
+            "features() is decoder-A/B MWPM machinery (residual arm); " \
+            "pair --sign_impl residual with --decoder mwpm"
         states = np.asarray(states)
         lead = states.shape[:-1]
         bits = self._bits(states)

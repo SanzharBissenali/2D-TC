@@ -34,6 +34,29 @@ index, so recoveries degenerate in sum-of-link-indices stay tied under both
 (adversarial probe, 1x2 exhaustive: 440/540 sign-ties detected; the missed
 weight was 1.4e-14 vs 4.7e-10 detected, ~0.003% relative).
 
+Phase 4c (--decoders): grades the decoder LADDER (model/decoders.py) against
+the same exact psi in one pass -- per-decoder F_s lands in record['decoders'].
+Pre-registered predictions (physics discussion 2026-08-30) AND measured
+outcomes (1x2/2x2 grids + swarm S4, same day -- kept side by side for honest
+pre-registration):
+  anchor    predicted 1 - F_s ~ N*hx^2 -- CONFIRMED with refined prefactor
+            ~F*hx^2 (co-tree cycles; 0.6% quantitative match, k=2.03);
+  greedy    predicted between anchor and mwpm -- CONFIRMED (~2x mwpm; tie
+            losses + closest-pair-first mispairings, both same exponent);
+  unionfind predicted ~greedy-class -- CONFIRMED but larger (~10-500x mwpm:
+            cluster-merge mispairing of two nearby defect pairs is an
+            excess-2 channel on wmin=2 configs, two hx powers cheaper);
+  mwpm      predicted tie channel only -- CONFIRMED; NOTE the tie exponent
+            is size-dependent (2*wmin of the cheapest tied syndrome: hx^6 at
+            1x2, hx^10 at 2x2/2x3), not a universal hx^10;
+  tie_sum   predicted ~exact -- REFUTED: ~= mwpm (dominant tied classes sum
+            to exactly zero => mwpm fallback; slightly WORSE at hz != 0).
+            The tied signs are decided by unequal resolvent weights -- see
+            the tie_sum entry in model/decoders.py for the v2 design.
+The default --decoders mwpm changes nothing: the top-level keys always come
+from the original decoder-A/B path, and the new-path mwpm F_s is asserted to
+match it (internal cross-validation).
+
 Local sizes (full 2^N enumeration): 1x2 (N=11), 3x1 (N=16), 2x2 (N=19).
 2x3 (N=27) needs an exclusive cluster node (jobs/nersc_signfid.sh).
 
@@ -95,6 +118,16 @@ def build_matchings(g):
             Matching.from_check_matrix(H, weights=1.0 + pert[::-1]))
 
 
+def syndrome_bits(g, configs):
+    """(n, V) uint8 Q_v syndrome bits for a chunk of config integers."""
+    synd = np.zeros((configs.shape[0], g.n_vertices), dtype=np.uint8)
+    for v in range(g.n_vertices):
+        for l in g.vertex_all[v]:
+            if l != -1:
+                synd[:, v] ^= ((configs >> int(l)) & 1).astype(np.uint8)
+    return synd
+
+
 def head_signs(g, configs, table, matchings):
     """(sign_1, sign_2, n_defects) for a chunk of config integers.
 
@@ -103,11 +136,7 @@ def head_signs(g, configs, table, matchings):
     must land in the loop-sign table).
     """
     n = configs.shape[0]
-    synd = np.zeros((n, g.n_vertices), dtype=np.uint8)
-    for v in range(g.n_vertices):
-        for l in g.vertex_all[v]:
-            if l != -1:
-                synd[:, v] ^= ((configs >> int(l)) & 1).astype(np.uint8)
+    synd = syndrome_bits(g, configs)
     ndef = synd.sum(axis=1).astype(np.int64)
     assert not (ndef % 2).any(), "odd syndrome weight (violates prod Q_v = 1)"
 
@@ -123,7 +152,121 @@ def head_signs(g, configs, table, matchings):
     return signs[0], signs[1], ndef
 
 
-def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0):
+def build_decoder_tables(g, names, tiesum_dmax, unpack_chunk=1 << 16):
+    """Precompute per-decoder corrections over ALL even-weight syndromes.
+
+    There are only 2^(V-1) even syndromes (prod Q_v = 1 forbids odd ones) --
+    far fewer than 2^N configs -- so every decoder decodes each syndrome ONCE
+    here; the per-point 2^N sweep is then pure array lookups. Corrections are
+    packed as int64 link masks. tie_sum stores the degenerate-class masks per
+    syndrome instead (None => mwpm fallback beyond d_max). Built once per
+    size, reused for every field point."""
+    from model.decoders import make_decoder
+
+    V, N = g.n_vertices, g.N
+    ints = np.arange(1 << V, dtype=np.int64)
+    par = ints.copy()
+    for sh in (16, 8, 4, 2, 1):
+        par ^= par >> sh
+    synd_ints = ints[(par & 1) == 0]                    # (S,)
+    S = synd_ints.size
+    index = np.full(1 << V, -1, dtype=np.int32)
+    index[synd_ints] = np.arange(S, dtype=np.int32)
+    synd_bits = np.empty((S, V), dtype=np.uint8)
+    for lo in range(0, S, unpack_chunk):
+        c = synd_ints[lo:lo + unpack_chunk]
+        synd_bits[lo:lo + len(c)] = \
+            ((c[:, None] >> np.arange(V, dtype=np.int64)) & 1).astype(np.uint8)
+
+    bitvals = (1 << np.arange(N, dtype=np.int64))
+    tables = {"index": index, "names": list(names), "S": S,
+              "tiesum_dmax": tiesum_dmax}
+    need_mwpm = ("mwpm" in names) or ("tie_sum" in names)
+    corr_names = [n for n in names if n != "tie_sum"]
+    if need_mwpm and "mwpm" not in corr_names:
+        corr_names.append("mwpm")
+    for name in corr_names:
+        t0 = time.time()
+        dec = make_decoder(name, g)
+        mask = np.empty(S, dtype=np.int64)
+        for lo in range(0, S, unpack_chunk):
+            corr = dec.corrections(synd_bits[lo:lo + unpack_chunk])
+            mask[lo:lo + corr.shape[0]] = corr.astype(np.int64) @ bitvals
+        tables[name] = mask
+        print(f"# decoder table {name}: {S} syndromes in "
+              f"{time.time() - t0:.1f} s", flush=True)
+
+    if "tie_sum" in names:
+        t0 = time.time()
+        ts = make_decoder("tie_sum", g, d_max=tiesum_dmax)
+        classes = [None] * S                            # None => fallback
+        truncated = np.zeros(S, dtype=bool)
+        n_fb = 0
+        for i in range(S):
+            cls, fb, tr = ts.class_for_syndrome(synd_bits[i])
+            truncated[i] = tr
+            if fb:
+                n_fb += 1
+            else:
+                classes[i] = cls.astype(np.int64) @ bitvals
+        tables["tie_sum"] = classes
+        tables["tie_sum_truncated"] = truncated
+        sizes = [c.size for c in classes if c is not None]
+        print(f"# decoder table tie_sum: {S} syndromes in "
+              f"{time.time() - t0:.1f} s (fallback {n_fb}, truncated "
+              f"{int(truncated.sum())}, max class {max(sizes)}, "
+              f"mean class {np.mean(sizes):.2f})", flush=True)
+    return tables
+
+
+def decoder_signs(g, configs, sidx, parity_arr, dec_tables, name):
+    """Head signs (+-1 int8) for a chunk under one ladder decoder.
+
+    For tie_sum also returns (fallback, truncated, cancelled) bool masks;
+    correction decoders return None there."""
+    if name != "tie_sum":
+        rec = configs ^ dec_tables[name][sidx]
+        sgn = parity_arr[rec]
+        assert (sgn != 0).all(), f"{name}: recovery left the sector?!"
+        return sgn, None
+
+    classes = dec_tables["tie_sum"]
+    truncated_tab = dec_tables["tie_sum_truncated"]
+    mwpm_mask = dec_tables["mwpm"]
+    sgn = np.zeros(configs.shape[0], dtype=np.int8)
+    fallback = np.zeros(configs.shape[0], dtype=bool)
+    truncated = np.zeros(configs.shape[0], dtype=bool)
+    cancelled = np.zeros(configs.shape[0], dtype=bool)
+    order = np.argsort(sidx, kind="stable")
+    lo = 0
+    while lo < order.size:
+        hi = lo
+        s = sidx[order[lo]]
+        while hi < order.size and sidx[order[hi]] == s:
+            hi += 1
+        rows = order[lo:hi]
+        cfgs = configs[rows]
+        cls = classes[s]
+        truncated[rows] = truncated_tab[s]
+        if cls is None:
+            fallback[rows] = True
+            sgn[rows] = parity_arr[cfgs ^ mwpm_mask[s]]
+        else:
+            tot = parity_arr[cfgs[:, None] ^ cls[None, :]] \
+                .astype(np.int64).sum(axis=1)
+            sg = np.sign(tot).astype(np.int8)
+            zero = sg == 0
+            if zero.any():
+                cancelled[rows[zero]] = True
+                sg[zero] = parity_arr[cfgs[zero] ^ mwpm_mask[s]]
+            sgn[rows] = sg
+        lo = hi
+    assert (sgn != 0).all(), "tie_sum: recovery left the sector?!"
+    return sgn, (fallback, truncated, cancelled)
+
+
+def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0,
+              dec_tables=None):
     t0 = time.time()
     evals, psi = _honeycomb_direct_ed(g, model, 1.0, hx, hz, k=k, tol=tol)
     t_ed = time.time() - t0
@@ -141,6 +284,9 @@ def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0):
     w_by_d, agree_by_d = {}, {}
     wrong_max = 0.0
     wrong_big = 0                            # wrong configs with weight > 1e-9
+    dnames = dec_tables["names"] if dec_tables is not None else []
+    dec_agree = {n: 0.0 for n in dnames}
+    ts_w = {"fallback": 0.0, "truncated": 0.0, "cancelled": 0.0}
     t0 = time.time()
     for lo in range(0, dim, chunk):
         c = np.arange(lo, min(lo + chunk, dim), dtype=np.int64)
@@ -160,11 +306,44 @@ def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0):
             w_by_d[int(d)] = w_by_d.get(int(d), 0.0) + float(wc[sel].sum())
             agree_by_d[int(d)] = (agree_by_d.get(int(d), 0.0)
                                   + float(wc[sel & ok1].sum()))
+        if dec_tables is not None:
+            sint = syndrome_bits(g, c).astype(np.int64) \
+                @ (1 << np.arange(g.n_vertices, dtype=np.int64))
+            sidx = dec_tables["index"][sint]
+            assert (sidx >= 0).all(), "config produced an odd syndrome?!"
+            for name in dnames:
+                sgn, extra = decoder_signs(g, c, sidx,
+                                           dec_tables["parity_arr"],
+                                           dec_tables, name)
+                dec_agree[name] += float(wc[sgn == ec].sum())
+                if extra is not None:
+                    fb, tr, cx = extra
+                    ts_w["fallback"] += float(wc[fb].sum())
+                    ts_w["truncated"] += float(wc[tr].sum())
+                    ts_w["cancelled"] += float(wc[cx].sum())
     t_head = time.time() - t0
 
     fid_by_d = {d: (agree_by_d[d] / w_by_d[d] if w_by_d[d] > 1e-20 else None)
                 for d in sorted(w_by_d)}
+    dec_block = None
+    if dec_tables is not None:
+        if "mwpm" in dec_agree:
+            # internal cross-validation: the syndrome-table mwpm path must
+            # reproduce the original decoder-A path (float sum order only)
+            assert abs(dec_agree["mwpm"] - agree1) < 1e-9, \
+                (f"mwpm table path F_s={dec_agree['mwpm']!r} != decoder-A "
+                 f"path F_s={agree1!r}")
+        dec_block = {}
+        for name in dnames:
+            entry = {"F_s": dec_agree[name],
+                     "wrong_weight": 1.0 - dec_agree[name]}
+            if name == "tie_sum":
+                entry["fallback_weight"] = ts_w["fallback"]
+                entry["truncated_weight"] = ts_w["truncated"]
+                entry["cancelled_weight"] = ts_w["cancelled"]
+            dec_block[name] = entry
     return {
+        **({"decoders": dec_block} if dec_block is not None else {}),
         "hx": hx, "hz": hz, "model": model, "k": k,
         "E0": float(evals[0]),
         "evals": [float(e) for e in evals],
@@ -194,6 +373,13 @@ def main():
     ap.add_argument("--tol", type=float, default=0,
                     help="ARPACK tol (0 = machine precision; ~1e-8 for 2^27)")
     ap.add_argument("--chunk", type=int, default=1 << 22)
+    ap.add_argument("--decoders", default="mwpm",
+                    help="comma list from model/decoders.py "
+                         "(mwpm,anchor,greedy,unionfind,tie_sum); the bare "
+                         "default 'mwpm' skips the ladder machinery entirely "
+                         "(byte-identical legacy output)")
+    ap.add_argument("--tiesum_dmax", type=int, default=10,
+                    help="tie_sum defect cap (more defects => mwpm fallback)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -203,20 +389,36 @@ def main():
     table = loop_sign_table(g)
     matchings = build_matchings(g)
 
+    dec_names = list(dict.fromkeys(                 # dedupe, keep order (a
+        d.strip() for d in args.decoders.split(",") if d.strip()))  # repeated
+    # name would silently double-accumulate its F_s -- swarm S2 finding)
+    dec_tables = None
+    if dec_names != ["mwpm"]:
+        dec_tables = build_decoder_tables(g, dec_names, args.tiesum_dmax)
+        parity_arr = np.zeros(1 << g.N, dtype=np.int8)
+        for x, s in table.items():
+            parity_arr[x] = s
+        dec_tables["parity_arr"] = parity_arr
+
     points = [tuple(float(x) for x in p.split(","))
               for p in args.points.split(";") if p.strip()]
     hdr = (f"{'hx':>5} {'hz':>5} {'E0':>14} {'F_s':>12} {'F_plus':>12} "
            f"{'on-sect wt':>12} {'tie wt':>10} {'wrong wt':>10}")
+    if dec_tables is not None:
+        hdr += "".join(f" {'1-F_s:' + n:>16}" for n in dec_names)
     print(hdr, flush=True)
     records = []
     for hx, hz in points:
         r = run_point(g, args.model, hx, hz, args.k, table, matchings,
-                      args.chunk, tol=args.tol)
+                      args.chunk, tol=args.tol, dec_tables=dec_tables)
         records.append(r)
-        print(f"{hx:5.2f} {hz:5.2f} {r['E0']:14.8f} {r['F_s']:12.9f} "
-              f"{r['F_plus']:12.9f} {r['onsector_weight']:12.9f} "
-              f"{r['tie_disagree_weight']:10.3e} {r['wrong_weight']:10.3e}",
-              flush=True)
+        line = (f"{hx:5.2f} {hz:5.2f} {r['E0']:14.8f} {r['F_s']:12.9f} "
+                f"{r['F_plus']:12.9f} {r['onsector_weight']:12.9f} "
+                f"{r['tie_disagree_weight']:10.3e} {r['wrong_weight']:10.3e}")
+        if dec_tables is not None:
+            line += "".join(f" {r['decoders'][n]['wrong_weight']:16.9e}"
+                            for n in dec_names)
+        print(line, flush=True)
 
     if args.out:
         outdir = os.path.dirname(args.out)
@@ -225,7 +427,11 @@ def main():
         with open(args.out, "w") as f:
             json.dump({"Lx": args.Lx, "Ly": args.Ly, "model": args.model,
                        "N": g.N, "head": "MWPM(unit weights) + count_loops",
-                       "tie_eta": TIE_ETA, "points": records}, f, indent=1)
+                       "tie_eta": TIE_ETA,
+                       **({"decoders": dec_names,
+                           "tiesum_dmax": args.tiesum_dmax}
+                          if dec_tables is not None else {}),
+                       "points": records}, f, indent=1)
         print(f"# wrote {args.out}", flush=True)
 
 

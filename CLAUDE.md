@@ -764,6 +764,58 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   mathtext RecursionError on stale font caches — rm ~/.matplotlib/
   fontlist*.json + kernel restart. NEXT: the 3D port (recursion form of the
   head); optional corner seed replicas if the C/R-vs-B hints ever matter.
+- **Phase 4c (2026-08-30): decoder ladder + head scalability.** User's two questions:
+  (1) does the head scale to 12×12 (~500-1000 spins)? (2) do other QEC decoders
+  (anchor-all-anyons / lesser paradigms) change the story? **Scalability answer: the
+  algorithm is ~linear** (syndrome O(N); sparse-blossom decode ~linear in defects,
+  never the wall; loop count O(N·α)); the CODE had three incidental small-size
+  shortcuts — 2^F table, int64 packing (N>62), TIE_ETA minimality assert breaks
+  N≥71. Benchmarked to 12×12 (scratchpad bench_head.py): loop RECOUNTS dominate
+  ≥90%; hx≠0 ≈20-30 s/step host after cheap fixes (batched-csgraph counter 7-20×,
+  local 12-link hexagon-flip parity rule — verified, IS the 3D recursion form —
+  kills the hx=0/hz cost to ~0.3 s/step; hexagon flips also reuse the sample's
+  decode since they preserve the syndrome). **Literature (agent):** decoder-as-
+  sign-prior in NQS/VMC = NO precedent; signed/coherent coset sums = none (prob-only:
+  BSV 1405.4883, Stace-Barrett 0912.1159, K-best matchings 2510.06531); DS decoding
+  lit (semion code 1810.08204, PRA 102 032411) is device-EC only, tie interference
+  never discussed; 3D: matching ports verbatim (p_c~2.9%), MWPM-vs-optimal gap
+  ~5%→~12% and geodesic degeneracy binomial→multinomial ⇒ tie channel is the 3D
+  risk item. **Implementation (this session):** model/decoders.py — 5 deterministic
+  decoders {anchor, greedy, unionfind, mwpm, tie_sum} + per-syndrome memo caches
+  (pure memoization; step-equiv cost at 2×2: 0.2-2 s, tie_sum ≤8 s worst-random);
+  QECSignHead(geometry, decoder=) (default byte-identical; alt paths use a flat
+  parity array); --decoder flag (sign_impl operator only, asserted) → main.py /
+  sim_params / wandb tag dec-<name>; sign_fidelity --decoders grades the ladder
+  vs one ED ψ per point via unique-syndrome tables (only 2^(V−1) even syndromes:
+  2M at 2×3; legacy output byte-identical, new-path mwpm cross-asserted); jobs
+  take DECODERS/DECODER env. **Exact ladder (1×2 + 2×2 9-pt grid {0,0.4,0.8}²,
+  results/diagnostics/signfid_hc2x2_ds_grid_dl.json; notebook §Phase 4c):**
+  hierarchy anchor ≪ unionfind < greedy < mwpm ≈ tie_sum at EVERY field point;
+  hz axis exact for ALL decoders (recovery of empty syndrome is empty); anchor
+  1−F_s ~ F·hx² (co-tree cycles; 0.6% quantitative match, k=2.03) reaching 10%
+  at (0.8,0.4). **Physics swarm findings (4 agents, ALL PASSED: S1 oracle PASS incl.
+  exhaustive-subset minimality + exact tie-class set equality; S2 grading PASS
+  6/6, one real bug FIXED — duplicate --decoders names double-accumulated, now
+  deduped; S3 wiring PASS 5/5 — default byte-identical trajectories, all arms
+  train + guardrails fire + naming decoder-distinct; noted: complex trunk +
+  ladder decoder is PERMITTED by the rule as written; S4 physics):** tie exponent is size-dependent (2·wmin of cheapest tied
+  syndrome: hx^6 @1×2, hx^10 @2×2/2×3 — not universal); dominant tied classes sum
+  to EXACTLY zero ⇒ tie_sum ≈ mwpm (falls back right where mwpm errs; ~0.3% WORSE
+  at hz≠0 — democratic counting anti-correlates with hz-reweighted amplitudes);
+  **min+2 counting v2 REFUTED** (min+2 class is EMPTY on 99.6% of tied weight;
+  counting-v2 2× worse than mwpm at hz≠0); **true tied signs = unequal resolvent
+  weights of the minimal recoveries** (DS projectors split path environments; in
+  TC they'd be degenerate) — a resolvent-weighted, hz-aware tie_sum_v2 graded
+  0..2e-9 wrong weight (up to 1600× below mwpm), 440/440 tied-sign match = the
+  design that matters for 3D. unionfind's ~10-500× gap = one mechanism: cluster-
+  merge mispairs two nearby defect pairs (excess-2 on wmin=2 configs ⇒ hx⁴
+  channel). **Campaign (user-approved, overnight autonomy 2026-08-30):** 2×3
+  ladder diagnostics first (3 regular jobs, 9 pts × 5 decoders, ~15 min shared
+  table build + ~3.4 min/pt on top of ED+head per S2's measured 2×3 costs), then
+  — user decision: waves at **2×3 ONLY** (biggest ED-reachable size; NOT 2×2) —
+  9 pts × 5 arms = 45 NQS runs, Phase-3 recipe, W&B group hc-phase4c-ladder,
+  ~15 shared chunks. Morning deliverable: notebook comparison (per-decoder
+  heatmaps + selected telling points).
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.

@@ -169,13 +169,14 @@ def main():
                     "--sign_head qec needs pymatching (pip install pymatching "
                     "on a login node, like wandb)") from e
             from model.sign_head import QECSignHead
-            head = QECSignHead(geometry)
+            head = QECSignHead(geometry, decoder=config.get('decoder', 'mwpm'))
             if config.get('sign_impl', 'operator') == 'operator':
                 from model.sign_frame import SignFramedOperator
                 H = SignFramedOperator(H, head)
                 sign_frame_head = head
                 print(f"[sign head] qec/operator: training on H~ = SHS "
-                      f"(loop table 2^{head.F}, decoder-A MWPM)")
+                      f"(loop table 2^{head.F}, decoder "
+                      f"{config.get('decoder', 'mwpm')})")
             elif config.get('sign_impl') == 'residual':
                 from model.honeycomb_networks import ResidualSignedModel
                 model = ResidualSignedModel(base_model, head.features,

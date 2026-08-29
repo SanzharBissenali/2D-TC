@@ -70,6 +70,8 @@ def _tags(config):
         tags.append(config.get("model", "tc"))
     if config.get("sign_head", "none") != "none":
         tags.append(f"sign-{config.get('sign_head')}-{config.get('sign_impl', 'operator')}")
+        if config.get("decoder", "mwpm") != "mwpm":
+            tags.append(f"dec-{config.get('decoder')}")
     return tags
 
 
