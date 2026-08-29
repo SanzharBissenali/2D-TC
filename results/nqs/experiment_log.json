@@ -4296,5 +4296,116 @@
       "imag": 6.187399526997776e-18
     },
     "runtime": 1887.9213228225708
+  },
+  {
+    "run_id": "87946fd4",
+    "timestamp": "2026-08-28 21:59:41",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.3,
+      "hy": 0.0,
+      "hz": 0.35,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_hx0.3_hz0.35_cnnqR.json",
+        "G-equiv_1_hc2x3_ds_hx0.3_hz0.35_cnnqR.mpack"
+      ]
+    },
+    "n_params": 19850,
+    "final_energy": {
+      "real": -33.28893400426424,
+      "imag": -1.691262248080095e-18
+    },
+    "runtime": 1898.2632048130035
+  },
+  {
+    "run_id": "3b25b549",
+    "timestamp": "2026-08-28 22:13:19",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.2,
+      "hy": 0.0,
+      "hz": 0.2,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.2_cnnqR.json",
+        "G-equiv_1_hc2x2_ds_hx0.2_hz0.2_cnnqR.mpack"
+      ]
+    },
+    "n_params": 13098,
+    "final_energy": {
+      "real": -21.463753657909578,
+      "imag": 4.001582295839855e-18
+    },
+    "runtime": 1045.602660894394
+  },
+  {
+    "run_id": "7a5cba8f",
+    "timestamp": "2026-08-28 22:30:38",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.4,
+      "hy": 0.0,
+      "hz": 0.4,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x2_ds_hx0.4_hz0.4_cnnqR.json",
+        "G-equiv_1_hc2x2_ds_hx0.4_hz0.4_cnnqR.mpack"
+      ]
+    },
+    "n_params": 13098,
+    "final_energy": {
+      "real": -24.98226559634776,
+      "imag": -3.8398231268832134e-18
+    },
+    "runtime": 1016.4034154415131
   }
 ]
