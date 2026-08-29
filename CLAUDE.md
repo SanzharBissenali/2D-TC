@@ -741,11 +741,29 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   each + C in 5 chunks; 2×3 diagonal mixed pts × R(1)/C(2)); debug smoke
   57670501 (cnnqC+cnnqR@1×2 — its agent verifies + deletes artifacts);
   yesterday's 2×3 mixed ED (57670296-301) + cnnqB NQS (57670302). Grade with
-  scripts/phase4b_summary.py (ceiling columns built in); heatmap notebook
-  analysis/05_phase4b_plane.ipynb still to write. cnnqC straggler risk: 5-pt
-  complex chunks may bust 2:30 — resubmit, skip-if-complete resumes. NEXT
-  after grading: verdict in CLAUDE.md, W&B sync (group hc-phase4b-plane),
-  then the 3D port (recursion form of the head).
+  scripts/phase4b_summary.py (ceiling columns built in).
+- **Phase 4b RESULT (2026-08-29, 87/87 runs COMPLETE, W&B synced): all three
+  arms are statistically indistinguishable across the entire plane — the
+  shared QEC head sets the error; the sign treatment on top of it does not
+  matter in this regime.** User's reading (formed independently first, then
+  discussed): "all competitive, same ballpark, none loses" — CONFIRMED, with
+  the structural why: achieved rel-err sits 1-4 orders ABOVE the head ceiling
+  1−F_s at nearly every point (optimization/budget-limited at fixed 350
+  steps; V-scores track rel-err), so C's complex freedom and R's residual had
+  almost nothing left to win. Only the hx≳0.6, hz∈[0.2,0.6] corner has
+  ceiling ≈ achieved error (both ~1e-3) — there C/R show ≲15-20% hints over
+  B, within single-seed noise (seed replicas = the open follow-up). Cost at
+  equal accuracy: B (real, cheapest) > R (+385 params, host callback) > C
+  (complex-QGT/JIT tax, ~2x wall). Ops scars, all healed by resubmits: 2
+  R-chunk timeouts at the trimmed 1:45 wall (each ate its chunk's last
+  point); 3 jobs fast-"COMPLETED" on a broken GPU slice (nid004069,
+  CUDA_ERROR_UNKNOWN at init — sacct says COMPLETED, only the log/elapsed-
+  time sanity check tells). Viz: analysis/05_phase4b_plane.ipynb (house
+  rcParams per the peer repo's conventions; continuous log-space-cubic error
+  fields + 2×3 bars + achieved-vs-ceiling scatter). Gotcha: matplotlib
+  mathtext RecursionError on stale font caches — rm ~/.matplotlib/
+  fontlist*.json + kernel restart. NEXT: the 3D port (recursion form of the
+  head); optional corner seed replicas if the C/R-vs-B hints ever matter.
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
