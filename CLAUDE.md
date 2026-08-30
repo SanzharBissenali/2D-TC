@@ -842,7 +842,24 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   effective-weight MWPM (O(1), enumeration-free) + K-best cross-check;
   (6) re-grade greedy/UF accuracy in 3D (mispairing/cluster-merge channels are
   NOT interference-suppressed and grow with coordination; z=3 honeycomb was the
-  friendliest case).
+  friendliest case). Full study: docs/decoder_scaling.md.
+- **Phase 4c IN-VIVO RESULT (2026-08-31, 45/45 runs, jobs 57739135-57739235, all
+  COMPLETED healthy, W&B hc-phase4c-ladder): the ceiling map predicts the NQS.**
+  9 grid pts × 5 decoder arms at 2×3, cnnqB trunk, Phase-3 recipe. hz axis:
+  ALL five decoders TC-grade (8e-11..8e-7 — tie_sum's (0,0) run 8.4e-11 is the
+  best ever). hx>0: **anchor is the only arm whose ceiling bites** — achieved
+  4e-3..2e-2 = 14-68% of its 1−F_s ceiling, 10-30× the other arms (the E3
+  falsification test passed: a bad decoder's ceiling controls the error).
+  **mwpm ≈ greedy ≈ unionfind ≈ tie_sum in vivo** (2e-4..3e-3, ceilings differing
+  up to 20× all sit 1-2 orders BELOW achieved ⇒ optimization-limited at the fixed
+  350-step budget, same regime as Phase 4b). Combined verdict with the scaling
+  study: decoder choice is settled by speed+3D-portability, not accuracy ⇒ MWPM
+  stays production; anything ≥ unionfind grade is "good enough" at this budget.
+  tie_sum in-vivo cost benign (4.0 vs 3.6 s/step — memo + on-sector concentration;
+  the worst-random 8 s/step never materializes). Notebook §Phase 4c in vivo
+  (heatmaps + achieved-vs-ceiling scatter + field-point ladder); grades in
+  session scratchpad p4c_grades.json; runs in results/nqs/
+  G-equiv_1_hc2x3_ds_hx*_cnnqB{,_anchor,_greedy,_unionfind,_tie_sum}.*
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
