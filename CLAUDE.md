@@ -816,6 +816,33 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   9 pts × 5 arms = 45 NQS runs, Phase-3 recipe, W&B group hc-phase4c-ladder,
   ~15 shared chunks. Morning deliverable: notebook comparison (per-decoder
   heatmaps + selected telling points).
+- **Phase 4c scaling swarm (2026-08-30, 5 agents, reports in session scratchpad
+  scale_*/): NO speed-accuracy trade-off — MWPM wins both axes.** 12×12 frontier
+  (3.93M decodes/step vs shared parity shadow 841 s/step as-coded, ~20-30 s/step
+  after the local-rule+compiled-counter fixes): mwpm 0.6-2.9 µs/decode (2.5-12
+  s/step, C++); greedy 5-152 µs python (numba ×150 → 0.8-27 µs; d³ confirmed
+  exp 2.9); unionfind 135-434 µs eff. (numba ×23-44 → 1.3-12 µs; dominated by
+  greedy at every 2D physical point); anchor GEMM floor 3.3 µs — and a THEOREM:
+  any GF(2)-LINEAR decoder must mis-decode ≥F single-flip channels (rank bound;
+  anchor's wrong set == co-tree links exactly); tie_sum 25-285× shadow
+  (structural B×K parity tax) — retire to 2D diagnostic. Cross-confirmed: memo
+  caches DEAD at scale (flip-neighborhood syndromes provably 100% unique; dedup
+  costs more than sparse-blossom decoding — mwpm's no-cache design correct);
+  _check_valid int64 matmul = hidden 60-77 µs/row (spot-check only / f32 GEMM).
+  **3D port checklist (fermionic code):** (1) all decoders ran UNMODIFIED on
+  mock 3D cubic graphs; mwpm 2.5-48 µs at 1500 detectors; 3D degeneracy makes
+  blossom FASTER (unit weights 15-35% faster than perturbed); (2) TRAP:
+  tie_eta=0.4/N² drops below pymatching's weight quantization at 3D sizes ⇒
+  decoder-A lexicographic tie-break silently non-semantic (pert vs 2×pert
+  differ 1-6% of rows) — verify headroom or use explicit post-selection;
+  (3) replace all-pairs BFS init with single-source (verified bit-identical;
+  100 s/2 GB → 0.12 s/0.3 GB at V=10⁴); (4) patch sign01 V≤62 packing + 2^F
+  parity table (now load-bearing at 6×6+); (5) tie_sum enumeration DOA in 3D
+  (degeneracy 2.66^r vs 2D 1.36^r; capped sum = noise) — v2 = Stace–Barrett
+  effective-weight MWPM (O(1), enumeration-free) + K-best cross-check;
+  (6) re-grade greedy/UF accuracy in 3D (mispairing/cluster-merge channels are
+  NOT interference-suppressed and grow with coordination; z=3 honeycomb was the
+  friendliest case).
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
