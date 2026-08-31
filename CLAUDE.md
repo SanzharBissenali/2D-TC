@@ -860,6 +860,21 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   (heatmaps + achieved-vs-ceiling scatter + field-point ladder); grades in
   session scratchpad p4c_grades.json; runs in results/nqs/
   G-equiv_1_hc2x3_ds_hx*_cnnqB{,_anchor,_greedy,_unionfind,_tie_sum}.*
+- **Phase 4c ELIMINATION BRACKET (user discussion 2026-08-31, narrative in
+  BLOG.md):** anchor OUT on accuracy (linear-decoder no-go theorem; kept as
+  the negative control that proved the ceiling formalism); tie_sum OUT on
+  cost-without-benefit (exponential in defect SEPARATION not L per se —
+  1.36^r 2D / 2.66^r 3D — but its caps degrade it first: past d_max it IS
+  mwpm, truncated classes = deterministic noise; measured accuracy ≈ mwpm at
+  25-285× cost; idea survives only as resolvent/Stace-Barrett WEIGHTED
+  matching); unionfind OUT in 2D (greedy dominates both axes; kept as
+  compiled 3D fallback); **final: MWPM production, greedy understudy.**
+  Also recorded in BLOG.md: the 5-protocol sign definitions, the
+  plaquette-decomposition equivalence (direct loop count == flip recursion
+  on simply-connected patches; the recursion is the O(1)-update + 3D form),
+  and the F_s operational meaning (|ψ|²-weighted sign agreement = max
+  fidelity of ANY positive net × head — tiny-amplitude sign errors cost
+  their weight squared, which is why the tie channel is cheap).
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
