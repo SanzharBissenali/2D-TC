@@ -45,11 +45,14 @@ if [ "$DECODER" != "mwpm" ]; then
     DEC_FLAG="--decoder $DECODER"
     DEC_SUFFIX="_${DECODER}"
 fi
-# Phase 4d: HY != 0 => complex trunk (config forces dtype=complex); jobid gains
-# a _hy segment so skip-if-complete never collides with the hy=0 campaigns.
+# Phase 4d: HY != 0 => complex trunk (config forces dtype=complex -- the
+# header's "no complex-JIT tax" note does NOT apply; budget ~2x wall per
+# point and size -t accordingly); jobid gains a _hy segment so
+# skip-if-complete never collides with the hy=0 campaigns. Numeric zero test
+# so HY=0 and HY=0.0 both stay on the legacy naming (swarm finding).
 HY="${HY:-0.0}"
 HY_SEG=""
-[ "$HY" != "0.0" ] && HY_SEG="_hy${HY}"
+if ! awk "BEGIN{exit !($HY == 0)}"; then HY_SEG="_hy${HY}"; fi
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }

@@ -283,10 +283,17 @@ def create_honeycomb_hamiltonian(
             hi, [str(s) for s in H.operators], np.real(w).astype(np.float64)
         )
     else:
-        # hy != 0 (Phase 4d): single-Y strings are Hermitian but their matrix
-        # elements are imaginary -- H is complex Hermitian; keep complex weights.
+        # hy != 0 (Phase 4d): the WEIGHTS of a Hermitian PauliStrings operator
+        # are still exactly real (Y itself is the Hermitian factor; only matrix
+        # elements go complex) -- keep the T<->T^c reality assert, then cast
+        # complex128 so netket assembles the complex-Hermitian matrix elements.
+        assert max_imag < 1e-9, (
+            f"honeycomb H must have exactly real Pauli weights (got "
+            f"max|Im|={max_imag:g}); the T<->T^c pairing argument failed"
+        )
         H = nk.operator.PauliStrings(
-            hi, [str(s) for s in H.operators], w.astype(np.complex128)
+            hi, [str(s) for s in H.operators],
+            np.real(w).astype(np.complex128)
         )
 
     if return_info:

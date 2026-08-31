@@ -280,11 +280,18 @@ def run_point_complex(g, model, hx, hz, hy, k, chunk, dec_tables, tol=0,
     the bin grid the window {cos(phi+theta) > 0} is a half circle of bins and
     F(theta) = sum_win [M0 + Re(e^{2 i theta} M2)] / 2 -- the integrand
     vanishes quadratically at the window edges, so bin-boundary error is
-    O((2 pi/n_bins)^2 * edge mass), negligible. F_plus^C uses s == +1."""
+    O((2 pi/n_bins)^2 * edge mass), negligible; within each window the theta
+    optimum is refined ANALYTICALLY (max = sumA + |sumB| when the unconstrained
+    optimum falls inside the window), so the reported F is not grid-limited.
+    F_plus^C uses s == +1 -- NOTE its phase freedom makes it max(W+, W-), the
+    better of the positive and the globally-flipped state, so it is >= the
+    legacy hy=0 F_plus = W+ (decoder heads are unaffected: their F ~ 1)."""
     t0 = time.time()
     evals, psi = _honeycomb_direct_ed(g, model, 1.0, hx, hz, k=k, tol=tol,
                                       hy=hy)
     t_ed = time.time() - t0
+    assert dec_tables is not None, "--hy != 0 needs decoder tables"
+    assert n_bins % 2 == 0, "half-circle window needs even n_bins"
     psi = np.asarray(psi, dtype=np.complex128)
     anchor = psi[0]
     assert abs(anchor) > 1e-12 * np.max(np.abs(psi)), \
@@ -336,13 +343,26 @@ def run_point_complex(g, model, hx, hz, hy, k, chunk, dec_tables, tol=0,
         cB = np.concatenate([B, B]).cumsum()
         half = n_bins // 2
         # bin k covers phi ~ -pi + (k+.5)*2pi/K; window start for theta_j:
-        # phi > -pi/2 - theta_j  =>  k >= start_j
-        best = -1.0
+        # phi > -pi/2 - theta_j  =>  k >= start_j  (this formula lands on the
+        # COMPLEMENTARY half-circle == relabeling theta -> theta+pi; harmless
+        # for the max since the grid is closed under +pi and e^{2i theta} is
+        # pi-periodic -- verified in the 2026-09-01 read-only review)
         thetas = ks * (2.0 * np.pi / n_bins)
         start = np.floor((np.pi / 2.0 - thetas + np.pi) * scale).astype(np.int64) % n_bins
         sumA = cA[start + half - 1] - np.where(start > 0, cA[start - 1], 0.0)
         sumB = cB[start + half - 1] - np.where(start > 0, cB[start - 1], 0.0)
         vals = sumA + np.real(np.exp(2j * thetas) * sumB)
+        # analytic within-window refinement: window j is constant on
+        # theta in (theta_j - dtheta, theta_j]; its unconstrained optimum
+        # theta* = -arg(sumB)/2 (mod pi) gives F = sumA + |sumB| when inside
+        width = 2.0 * np.pi / n_bins
+        tstar = (-np.angle(sumB) / 2.0) % np.pi
+        lo_edge = thetas - width
+        inwin = np.zeros_like(vals, dtype=bool)
+        for shift in (-np.pi, 0.0, np.pi):
+            t = tstar + shift
+            inwin |= (t > lo_edge) & (t <= thetas)
+        vals = np.where(inwin, sumA + np.abs(sumB), vals)
         F[h] = float(vals.max())
     t_head = time.time() - t0
 

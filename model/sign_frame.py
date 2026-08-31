@@ -19,8 +19,10 @@ sampler never sees the head and stays fully on-device. Verified against netket
 3.16.1.post1: MCState.expect on a trivial-sign wrapper reproduces the wrapped
 operator BITWISE, and VMC_SRt drives the wrapper directly.
 
-Real in, real out: the wrapped honeycomb Hamiltonians are exactly real and the
-signs are +-1, so E_loc stays float64 (no complex-JIT tax).
+Real in, real out at hy=0: the wrapped honeycomb Hamiltonians are exactly real
+and the signs are +-1, so E_loc stays float64 (no complex-JIT tax). At hy != 0
+(Phase 4d) the wrapped H is complex Hermitian; the framing is dtype-agnostic
+(mels * s * s' with s = +-1) and dtype delegates to the wrapped operator.
 """
 
 import numpy as np

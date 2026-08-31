@@ -35,8 +35,10 @@ PTS="${POINTS:-0:0}"; PTS="${PTS//+/;}"; PTS="${PTS//:/,}"
 DECODERS="${DECODERS:-mwpm}"; DECODERS="${DECODERS//+/,}"
 TIESUM_DMAX="${TIESUM_DMAX:-10}"
 # Phase 4d: HY != 0 => complex ED + phase-optimized ceilings (~2x memory/time:
-# merged single-flip channel keeps the 2^27 hx+hy CSR at ~91 GB -- regular node).
+# merged single-flip channel keeps the 2^27 hx+hy CSR at ~91 GB -- override
+# the debug header with -q regular and a bigger -t for 2x3 hy points).
 HY="${HY:-0}"
+awk "BEGIN{exit !($HY == 0)}" && HY=0   # canonicalize zero spellings
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }

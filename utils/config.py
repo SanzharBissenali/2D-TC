@@ -383,6 +383,13 @@ def parse_arguments() -> Dict[str, Any]:
             if args.get('sign_impl', 'operator') == 'residual':
                 assert not args.get('complex_ansatz', False), \
                     "--sign_impl residual pairs with the real trunk (drop --complex_ansatz)"
+            # hy != 0 forces a complex trunk (below) even without the flag, so
+            # the model/residual impls -- validated on the real trunk only --
+            # are excluded on the hy axis (swarm finding 2026-09-01).
+            if args['hy'] != 0.0:
+                assert args.get('sign_impl', 'operator') == 'operator', \
+                    "--hy != 0 forces a complex trunk: use --sign_impl operator " \
+                    "(model/residual impls are real-trunk-only)"
             assert args.get('architecture', 'Combo') == 'Combo', \
                 "--sign_head qec: use the Combo arm (PlainCNN has no role here)"
             # Phase-4c decoder ladder: alternative decoders swap only the
@@ -423,9 +430,9 @@ def parse_arguments() -> Dict[str, Any]:
     # signful ansatz: either the complex CNN (dtype=complex, like the hy path) or the
     # real-encoder + complex-readout transformer (--tf_complex_output, handled first).
     if args.get('lattice', 'square') == 'honeycomb':
-        # Both honeycomb Hamiltonians are exactly real: the DS leg/projector dressing
-        # assembles to real Pauli weights (even Y-count per string), and hy is
-        # excluded above. The DS ground state is real-but-SIGNFUL ((-1)^{#loops});
+        # At hy=0 both honeycomb Hamiltonians are exactly real (the DS
+        # leg/projector dressing assembles to real Pauli weights). The DS
+        # ground state is real-but-SIGNFUL ((-1)^{#loops});
         # a float64 Combo is strictly positive and provably cannot represent it
         # (Hastings) -- --complex_ansatz opts into the complex-CNN arm (Phase-3
         # cnn-complex: the empirical "can a generic phase head learn the signs"

@@ -110,7 +110,12 @@ def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0, hy=0.0)
         elif isinstance(w, tuple):                            # merged field flip
             i = w[1]
             if hy != 0.0:
-                data[j + 1::step] = -hx - 1j * hy * zval(i).astype(np.float64)
+                # CSR entry is H[r, c] = <r|H|c> with c = r^bit(i):
+                # <r|sigma^y_i|c> = i*z_c(i) = -i*z_r(i)  =>  -hy term = +i*hy*z_r(i)
+                # (swarm finding 2026-09-01: evaluating the KET's z at the row
+                # requires the sign flip; the conjugate matrix is Hermitian too,
+                # which is why E0/ceiling gates could not catch it)
+                data[j + 1::step] = -hx + 1j * hy * zval(i).astype(np.float64)
             else:
                 data[j + 1::step] = -hx
         else:
@@ -394,8 +399,9 @@ def main():
     )
 
     if args.out is None and args.lattice == "honeycomb":
+        hy_seg = f"_hy{args.hy:.2f}" if args.hy != 0.0 else ""
         args.out = (f"results/ed/ed_hc{result['Lx']}x{result['Ly']}_{args.model}"
-                    f"_hx{args.hx:.2f}_hz{args.hz:.2f}.json")
+                    f"_hx{args.hx:.2f}_hz{args.hz:.2f}{hy_seg}.json")
 
     print(json.dumps({k: v for k, v in result.items()
                       if not isinstance(v, list) or len(v) <= 8}, indent=2))
