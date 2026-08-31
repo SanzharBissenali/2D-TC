@@ -151,6 +151,7 @@ def main():
         H = create_honeycomb_hamiltonian(
             hi, geometry, config.get('model', 'tc'),
             J=config.get('J', 1.0), hx=config['hx'], hz=config['hz'],
+            hy=config.get('hy', 0.0),
         )
         model = create_honeycomb_model(config, geometry)
         base_model = model            # pre-sign-head network (gates run on this)

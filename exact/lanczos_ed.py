@@ -31,7 +31,7 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
-def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0):
+def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0, hy=0.0):
     """Direct scipy Lanczos for the honeycomb models -- bypasses netket's
     Pauli->sparse conversion, whose intermediates OOM at 2^27 (observed: job
     57315881 lost even the 7-pattern TC h=0 build to exit 137 on the 55 GB
@@ -87,15 +87,19 @@ def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0):
             weights.append(w * np.where(nsum % 4 == 0, 1, -1).astype(np.int8))
         else:
             weights.append(None)  # constant -J
-    if hx != 0.0:
+    if hx != 0.0 or hy != 0.0:
+        # hx and hy both connect r <-> r^bit(i): ONE merged mask per site.
+        # <c|sigma^y_i|r> = i*z_r(i)  (sigma^y|up> = i|down>, sigma^y|down> = -i|up>),
+        # so the entry is -hx - i*hy*z_r(i): Hermitian since z flips with the bit.
         for i in range(N):
             masks.append(1 << i)
-            weights.append("hx")  # constant -hx
+            weights.append(("xy", i))
 
     P = len(masks)
     step = P + 1
+    cdtype = np.complex128 if hy != 0.0 else np.float64
     indices = np.empty(dim * step, dtype=np.int32)
-    data = np.empty(dim * step, dtype=np.float64)
+    data = np.empty(dim * step, dtype=cdtype)
     indices[0::step] = s
     data[0::step] = Hd
     for j, (m, w) in enumerate(zip(masks, weights)):
@@ -103,8 +107,12 @@ def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0):
         indices[j + 1::step] = c
         if isinstance(w, np.ndarray):
             data[j + 1::step] = J * w[c].astype(np.float64)   # +J X.D.P (ds)
-        elif w == "hx":
-            data[j + 1::step] = -hx
+        elif isinstance(w, tuple):                            # merged field flip
+            i = w[1]
+            if hy != 0.0:
+                data[j + 1::step] = -hx - 1j * hy * zval(i).astype(np.float64)
+            else:
+                data[j + 1::step] = -hx
         else:
             data[j + 1::step] = -J                            # -J X_hex (tc)
     del Hd, weights
@@ -141,8 +149,11 @@ def _honeycomb_observables(psi0, geometry, model):
     """
     N = geometry.N
     dim = 1 << N
-    psi = np.real(np.asarray(psi0))
-    prob = psi * psi
+    psi = np.asarray(psi0)
+    if not np.iscomplexobj(psi):
+        psi = np.real(psi)
+    prob = np.abs(psi) ** 2
+    psic = np.conj(psi)
 
     s = np.arange(dim, dtype=np.int64)
     _zc = {}
@@ -163,9 +174,17 @@ def _honeycomb_observables(psi0, geometry, model):
 
     obs = {}
     sz = [float((prob * zval(i)).sum()) for i in range(N)]
-    sx = [float((psi[s ^ (1 << i)] * psi).sum()) for i in range(N)]
+    # <sigma^x_i> = sum_r conj(psi[r^m]) psi[r]; real by hermiticity (exactly so
+    # for real psi; take .real for the complex hy path)
+    sx = [float(np.real((psic[s ^ (1 << i)] * psi).sum())) for i in range(N)]
     obs["magnetization_Z"] = sz
     obs["magnetization_X"] = sx
+    if np.iscomplexobj(psi):
+        # <sigma^y_i> = sum_r conj(psi[r^m]) * (i z_r(i)) * psi[r]
+        sy = [float(np.real((psic[s ^ (1 << i)] * (1j * zval(i)) * psi).sum()))
+              for i in range(N)]
+        obs["magnetization_Y"] = sy
+        obs["magnetization_Y_mean"] = float(np.mean(sy))
     obs["magnetization_Z_mean"] = float(np.mean(sz))
     obs["magnetization_X_mean"] = float(np.mean(sx))
 
@@ -188,9 +207,9 @@ def _honeycomb_observables(psi0, geometry, model):
                 if l != -1:
                     nsum += ((1 - zval(l)) // 2).astype(np.int8)
             w = w * np.where(nsum % 4 == 0, 1, -1).astype(np.int8)
-            plaq.append(float((psi[s ^ mask] * w * psi).sum()))
+            plaq.append(float(np.real((psic[s ^ mask] * w * psi).sum())))
         else:
-            plaq.append(float((psi[s ^ mask] * psi).sum()))
+            plaq.append(float(np.real((psic[s ^ mask] * psi).sum())))
     obs["plaq_term_per_hex"] = plaq
     obs["plaq_term_mean"] = float(np.mean(plaq))
     return obs
@@ -205,10 +224,10 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
         # Both models are exactly real (even Y-count strings) => float64 + the sign
         # diagnostics below, which are the primary deliverable for the DS model
         # ((-1)^{#loops} ground state). Square-lattice observables don't apply.
-        assert bc == "OBC" and hy == 0.0 and not ftc, \
-            "honeycomb ED: smooth OBC only, no hy/ftc"
+        assert bc == "OBC" and not ftc, \
+            "honeycomb ED: smooth OBC only, no ftc"
         Ly = Ly if Ly else Lx
-        dtype = "float64"
+        dtype = "complex" if hy != 0.0 else "float64"
         geometry = HoneycombGeometry(Lx, Ly)
         H = None  # honeycomb ED bypasses netket entirely -- see _honeycomb_direct_ed
         hinfo = {"builder": "direct-scipy"}
@@ -242,7 +261,7 @@ def run_ed(Lx, hx, hz, hy=0.0, J=1.0, bc="OBC", k=1, observables=True, ftc=False
         # netket's Pauli->sparse conversion intermediates OOM at 2^27 even for the
         # 7-pattern TC h=0 matrix (job 57315881, exit 137 on the 55 GB shared node).
         evals, psi0 = _honeycomb_direct_ed(geometry, model, J, hx, hz, k=max(k, 1),
-                                           ncv=ncv if ncv else None)
+                                           ncv=ncv if ncv else None, hy=hy)
     else:
         # Eigenvectors are needed for observables AND for the real-dtype sign/amplitude
         # diagnostics below, so --no-observables only skips the (expensive) per-site

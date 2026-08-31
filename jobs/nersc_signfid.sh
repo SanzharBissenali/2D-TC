@@ -34,6 +34,9 @@ PTS="${POINTS:-0:0}"; PTS="${PTS//+/;}"; PTS="${PTS//:/,}"
 # legacy single-decoder run); output filename gains a _dl tag when active.
 DECODERS="${DECODERS:-mwpm}"; DECODERS="${DECODERS//+/,}"
 TIESUM_DMAX="${TIESUM_DMAX:-10}"
+# Phase 4d: HY != 0 => complex ED + phase-optimized ceilings (~2x memory/time:
+# merged single-flip channel keeps the 2^27 hx+hy CSR at ~91 GB -- regular node).
+HY="${HY:-0}"
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }
@@ -42,9 +45,10 @@ OUT=$REPO/results/diagnostics
 mkdir -p "$OUT"
 TAG=$(echo "$PTS" | tr ';,' '__')
 [ "$DECODERS" != "mwpm" ] && TAG="${TAG}_dl"
-echo "=== signfid ${LX}x${LY} $MODEL points=[$PTS] k=$K tol=$TOL decoders=[$DECODERS] ==="
+[ "$HY" != "0" ] && TAG="${TAG}_hy${HY}"
+echo "=== signfid ${LX}x${LY} $MODEL points=[$PTS] hy=$HY k=$K tol=$TOL decoders=[$DECODERS] ==="
 PYTHONPATH=$REPO python "$REPO/scripts/sign_fidelity.py" \
-    --Lx "$LX" --Ly "$LY" --model "$MODEL" --points "$PTS" \
+    --Lx "$LX" --Ly "$LY" --model "$MODEL" --points "$PTS" --hy "$HY" \
     --k "$K" --tol "$TOL" \
     --decoders "$DECODERS" --tiesum_dmax "$TIESUM_DMAX" \
     --out "$OUT/signfid_hc${LX}x${LY}_${MODEL}_${TAG}.json"

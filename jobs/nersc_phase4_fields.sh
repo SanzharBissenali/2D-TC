@@ -45,6 +45,11 @@ if [ "$DECODER" != "mwpm" ]; then
     DEC_FLAG="--decoder $DECODER"
     DEC_SUFFIX="_${DECODER}"
 fi
+# Phase 4d: HY != 0 => complex trunk (config forces dtype=complex); jobid gains
+# a _hy segment so skip-if-complete never collides with the hy=0 campaigns.
+HY="${HY:-0.0}"
+HY_SEG=""
+[ "$HY" != "0.0" ] && HY_SEG="_hy${HY}"
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }
@@ -72,7 +77,7 @@ echo "=== phase4-fields: ${LX}x${LY} ds points=[$POINTS] arms=[$ARMS] sim_time=$
 for pt in $POINTS; do
   hx="${pt%%:*}"; hz="${pt##*:}"
   for arm in $ARMS; do
-    jobid="hc${LX}x${LY}_ds_hx${hx}_hz${hz}_${arm}${DEC_SUFFIX}"
+    jobid="hc${LX}x${LY}_ds_hx${hx}_hz${hz}${HY_SEG}_${arm}${DEC_SUFFIX}"
     if [ -f "$OUTDIR/G-equiv_1_${jobid}.mpack" ]; then
         echo "=== skip $jobid (complete) ==="
         continue
@@ -81,7 +86,7 @@ for pt in $POINTS; do
     ( cd "$OUTDIR" && PYTHONPATH=$REPO python "$REPO/main.py" \
         --outindex 1 --jobid "$jobid" \
         --lattice honeycomb --model ds --Lx "$LX" --Ly "$LY" \
-        --hx "$hx" --hy 0.0 --hz "$hz" \
+        --hx "$hx" --hy "$HY" --hz "$hz" \
         --optimizer minsr --lr 0.01 --dt 0.01 --diag_shift 6e-5 \
         --sim_time "$SIM_TIME" --seed "$SEED" --kernel_size 2 \
         --n_samples_fin 8192 --use_custom_sampler \

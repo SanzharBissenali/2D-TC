@@ -265,6 +265,101 @@ def decoder_signs(g, configs, sidx, parity_arr, dec_tables, name):
     return sgn, (fallback, truncated, cancelled)
 
 
+def run_point_complex(g, model, hx, hz, hy, k, chunk, dec_tables, tol=0,
+                      n_bins=4096):
+    """hy != 0 (Phase 4d): the GS is complex, so +-1 'sign agreement' is
+    undefined. Graded instead: the PHASE-OPTIMIZED REAL-SIGNED CEILING -- for
+    head signs s(sigma) in {+-1} and any positive amplitude A >= 0,
+
+        F_s^C = max_A,theta |<psi| e^{i theta} A s>|^2
+              = max_theta sum_sigma max(Re(e^{i theta} s(sigma) psi*(sigma)), 0)^2
+
+    (Cauchy-Schwarz on the positive part). Reduces EXACTLY to the hy=0 F_s for
+    real psi. Computed exactly via angular binning: c = s psi* binned by phase
+    into n_bins with per-bin moments M0 = sum|c|^2, M2 = sum c^2; for theta on
+    the bin grid the window {cos(phi+theta) > 0} is a half circle of bins and
+    F(theta) = sum_win [M0 + Re(e^{2 i theta} M2)] / 2 -- the integrand
+    vanishes quadratically at the window edges, so bin-boundary error is
+    O((2 pi/n_bins)^2 * edge mass), negligible. F_plus^C uses s == +1."""
+    t0 = time.time()
+    evals, psi = _honeycomb_direct_ed(g, model, 1.0, hx, hz, k=k, tol=tol,
+                                      hy=hy)
+    t_ed = time.time() - t0
+    psi = np.asarray(psi, dtype=np.complex128)
+    anchor = psi[0]
+    assert abs(anchor) > 1e-12 * np.max(np.abs(psi)), \
+        "all-up anchor numerically zero -- phase gauge undefined"
+    psi *= np.conj(anchor) / abs(anchor)          # gauge: psi(all-up) real > 0
+    psi /= np.sqrt(float((np.abs(psi) ** 2).sum()))
+
+    dnames = dec_tables["names"]
+    heads = list(dnames) + ["__plus__"]
+    M0 = {h: np.zeros(n_bins) for h in heads}
+    M2 = {h: np.zeros(n_bins, dtype=np.complex128) for h in heads}
+    w_by_d = {}
+    dim = 1 << g.N
+    scale = n_bins / (2.0 * np.pi)
+    t0 = time.time()
+    for lo in range(0, dim, chunk):
+        c_idx = np.arange(lo, min(lo + chunk, dim), dtype=np.int64)
+        pc = np.conj(psi[lo:lo + len(c_idx)])
+        synd = syndrome_bits(g, c_idx)
+        ndef = synd.sum(axis=1)
+        wc = np.abs(pc) ** 2
+        for d in np.unique(ndef):
+            w_by_d[int(d)] = w_by_d.get(int(d), 0.0) + float(wc[ndef == d].sum())
+        sint = synd.astype(np.int64) @ (1 << np.arange(g.n_vertices,
+                                                       dtype=np.int64))
+        sidx = dec_tables["index"][sint]
+        assert (sidx >= 0).all(), "config produced an odd syndrome?!"
+        for h in heads:
+            if h == "__plus__":
+                c = pc
+            else:
+                sgn, _ = decoder_signs(g, c_idx, sidx,
+                                       dec_tables["parity_arr"], dec_tables, h)
+                c = pc * sgn
+            b = np.floor((np.angle(c) + np.pi) * scale).astype(np.int64) % n_bins
+            M0[h] += np.bincount(b, weights=wc, minlength=n_bins)
+            c2 = c * c
+            M2[h] += np.bincount(b, weights=c2.real, minlength=n_bins) \
+                + 1j * np.bincount(b, weights=c2.imag, minlength=n_bins)
+
+    # window sums: theta_j = j*2pi/n_bins keeps bins with cos(phi_k+theta_j)>0,
+    # i.e. phi in (-pi/2 - theta, pi/2 - theta): a half circle sliding with j.
+    F = {}
+    ks = np.arange(n_bins)
+    for h in heads:
+        A = 0.5 * M0[h]
+        B = 0.5 * M2[h]
+        cA = np.concatenate([A, A]).cumsum()
+        cB = np.concatenate([B, B]).cumsum()
+        half = n_bins // 2
+        # bin k covers phi ~ -pi + (k+.5)*2pi/K; window start for theta_j:
+        # phi > -pi/2 - theta_j  =>  k >= start_j
+        best = -1.0
+        thetas = ks * (2.0 * np.pi / n_bins)
+        start = np.floor((np.pi / 2.0 - thetas + np.pi) * scale).astype(np.int64) % n_bins
+        sumA = cA[start + half - 1] - np.where(start > 0, cA[start - 1], 0.0)
+        sumB = cB[start + half - 1] - np.where(start > 0, cB[start - 1], 0.0)
+        vals = sumA + np.real(np.exp(2j * thetas) * sumB)
+        F[h] = float(vals.max())
+    t_head = time.time() - t0
+
+    return {
+        "hx": hx, "hz": hz, "hy": hy, "model": model, "k": k,
+        "E0": float(evals[0]),
+        "evals": [float(e) for e in evals],
+        "complex_ceiling": True, "n_bins": n_bins,
+        "F_plus": F["__plus__"],
+        "onsector_weight": w_by_d.get(0, 0.0),
+        "weight_by_defects": {str(d): w_by_d[d] for d in sorted(w_by_d)},
+        "decoders": {h: {"F_s": F[h], "wrong_weight": 1.0 - F[h]}
+                     for h in dnames},
+        "t_ed_s": t_ed, "t_head_s": t_head,
+    }
+
+
 def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0,
               dec_tables=None):
     t0 = time.time()
@@ -380,6 +475,10 @@ def main():
                          "(byte-identical legacy output)")
     ap.add_argument("--tiesum_dmax", type=int, default=10,
                     help="tie_sum defect cap (more defects => mwpm fallback)")
+    ap.add_argument("--hy", type=float, default=0.0,
+                    help="Y field (Phase 4d): complex GS => the graded quantity "
+                         "becomes the phase-optimized real-signed ceiling "
+                         "(see run_point_complex); hy=0 is byte-identical legacy")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -393,7 +492,7 @@ def main():
         d.strip() for d in args.decoders.split(",") if d.strip()))  # repeated
     # name would silently double-accumulate its F_s -- swarm S2 finding)
     dec_tables = None
-    if dec_names != ["mwpm"]:
+    if dec_names != ["mwpm"] or args.hy != 0.0:
         dec_tables = build_decoder_tables(g, dec_names, args.tiesum_dmax)
         parity_arr = np.zeros(1 << g.N, dtype=np.int8)
         for x, s in table.items():
@@ -409,6 +508,17 @@ def main():
     print(hdr, flush=True)
     records = []
     for hx, hz in points:
+        if args.hy != 0.0:
+            r = run_point_complex(g, args.model, hx, hz, args.hy, args.k,
+                                  args.chunk, dec_tables, tol=args.tol)
+            records.append(r)
+            line = (f"{hx:5.2f} {hz:5.2f} {r['E0']:14.8f} {'(complex)':>12} "
+                    f"{r['F_plus']:12.9f} {r['onsector_weight']:12.9f} "
+                    f"{'-':>10} {'-':>10}")
+            line += "".join(f" {r['decoders'][n]['wrong_weight']:16.9e}"
+                            for n in dec_names)
+            print(line, flush=True)
+            continue
         r = run_point(g, args.model, hx, hz, args.k, table, matchings,
                       args.chunk, tol=args.tol, dec_tables=dec_tables)
         records.append(r)
@@ -427,7 +537,7 @@ def main():
         with open(args.out, "w") as f:
             json.dump({"Lx": args.Lx, "Ly": args.Ly, "model": args.model,
                        "N": g.N, "head": "MWPM(unit weights) + count_loops",
-                       "tie_eta": TIE_ETA,
+                       "tie_eta": TIE_ETA, "hy": args.hy,
                        **({"decoders": dec_names,
                            "tiesum_dmax": args.tiesum_dmax}
                           if dec_tables is not None else {}),

@@ -355,10 +355,10 @@ def parse_arguments() -> Dict[str, Any]:
         assert args['bc'] == 'OBC', \
             "--lattice honeycomb: only the smooth-OBC patch is implemented"
         assert not args.get('dual_basis', False) and not args.get('ftc', False) and \
-            args.get('h_f', 0.0) == 0.0 and args['hy'] == 0.0 and \
+            args.get('h_f', 0.0) == 0.0 and \
             args['Jy_p'] == 0.0 and args['Jy_v'] == 0.0 and args['Jbond'] == 0.0, (
-            "--lattice honeycomb supports only hx/hz fields "
-            "(no dual_basis/ftc/h_f/hy/Jy_p/Jy_v/Jbond)"
+            "--lattice honeycomb supports only hx/hy/hz fields "
+            "(no dual_basis/ftc/h_f/Jy_p/Jy_v/Jbond)"
         )
         # create_honeycomb_model only implements Combo/PlainCNN; the transformer
         # arms (--symmetric_block != cnn) hard-code square-lattice machinery and
@@ -429,8 +429,11 @@ def parse_arguments() -> Dict[str, Any]:
         # a float64 Combo is strictly positive and provably cannot represent it
         # (Hastings) -- --complex_ansatz opts into the complex-CNN arm (Phase-3
         # cnn-complex: the empirical "can a generic phase head learn the signs"
-        # question, with no theorem either way).
-        args['dtype'] = "complex" if args.get('complex_ansatz', False) else "float64"
+        # question, with no theorem either way). hy != 0 (Phase 4d) makes the
+        # honeycomb H complex Hermitian: the GS carries genuine phases, so the
+        # trunk MUST be complex regardless of the --complex_ansatz flag.
+        args['dtype'] = "complex" if (args.get('complex_ansatz', False)
+                                      or args['hy'] != 0.0) else "float64"
     elif args.get('tf_complex_output', False) and args.get('symmetric_block', 'cnn') in ('transformer', 'full_transformer'):
         args['dtype'] = "float64"
     # The fermionic TC (--ftc) is real but non-stoquastic. Sign structure of the exact

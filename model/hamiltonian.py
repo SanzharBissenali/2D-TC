@@ -191,6 +191,7 @@ def create_honeycomb_hamiltonian(
     J: float = 1.0,
     hx: float = 0.0,
     hz: float = 0.0,
+    hy: float = 0.0,
     return_info: bool = False,
 ) -> nk.operator.AbstractOperator:
     """Levin-Gu honeycomb Hamiltonians (arXiv:1202.3120 Sec. IV) on the smooth-OBC
@@ -267,16 +268,26 @@ def create_honeycomb_hamiltonian(
             H = _acc(H, -hz * _ps(nk.operator.spin.sigmaz, j))
         if hx != 0.0:
             H = _acc(H, -hx * _ps(nk.operator.spin.sigmax, j))
+        if hy != 0.0:
+            H = _acc(H, -hy * _ps(nk.operator.spin.sigmay, j))
 
     w = np.asarray(H.weights)
     max_imag = float(np.abs(w.imag).max()) if np.iscomplexobj(w) else 0.0
-    assert max_imag < 1e-9, (
-        f"honeycomb H must have exactly real Pauli weights (got max|Im|={max_imag:g});"
-        " the T<->T^c pairing argument failed -- geometry/algebra bug"
-    )
-    H = nk.operator.PauliStrings(
-        hi, [str(s) for s in H.operators], np.real(w).astype(np.float64)
-    )
+    if hy == 0.0:
+        # hx/hz cuts: exactly real by the T<->T^c pairing -- assert, cast float64.
+        assert max_imag < 1e-9, (
+            f"honeycomb H must have exactly real Pauli weights (got max|Im|={max_imag:g});"
+            " the T<->T^c pairing argument failed -- geometry/algebra bug"
+        )
+        H = nk.operator.PauliStrings(
+            hi, [str(s) for s in H.operators], np.real(w).astype(np.float64)
+        )
+    else:
+        # hy != 0 (Phase 4d): single-Y strings are Hermitian but their matrix
+        # elements are imaginary -- H is complex Hermitian; keep complex weights.
+        H = nk.operator.PauliStrings(
+            hi, [str(s) for s in H.operators], w.astype(np.complex128)
+        )
 
     if return_info:
         return H, {
