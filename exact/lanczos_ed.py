@@ -31,7 +31,8 @@ def _expect(psi, sparse_op):
     return float(np.real(np.vdot(psi, sparse_op @ psi)))
 
 
-def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0, hy=0.0):
+def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0, hy=0.0,
+                         return_H=False):
     """Direct scipy Lanczos for the honeycomb models -- bypasses netket's
     Pauli->sparse conversion, whose intermediates OOM at 2^27 (observed: job
     57315881 lost even the 7-pattern TC h=0 build to exit 137 on the 55 GB
@@ -135,6 +136,8 @@ def _honeycomb_direct_ed(geometry, model, J, hx, hz, k, ncv=None, tol=0, hy=0.0)
     # need amplitude signs (scripts/sign_fidelity.py) inside debug walltime.
     evals, evecs = eigsh(H, k=k, which="SA", ncv=ncv, tol=tol)
     order = np.argsort(evals)
+    if return_H:
+        return evals[order], np.asarray(evecs[:, order[0]]), H
     return evals[order], np.asarray(evecs[:, order[0]])
 
 
