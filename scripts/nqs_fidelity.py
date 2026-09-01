@@ -64,23 +64,40 @@ def parse_arm(token):
     raise ValueError(f"unknown arm token {token!r}")
 
 
+def _sp(sp, key, default):
+    """sim_params values are 1-element lists; unwrap with a fallback."""
+    v = sp.get(key)
+    if v is None:
+        return default
+    if isinstance(v, list) and len(v) == 1 and not isinstance(default, list):
+        return type(default)(v[0])
+    if isinstance(v, list) and v and isinstance(v[0], list):
+        return list(v[0])
+    return v
+
+
 def run_config(base, is_complex, hx, hz, hy, sp):
-    """Campaign recipe + sim_params overrides -> the config dict the model
-    factory and sampler need (recipe fixed across every notebook campaign)."""
+    """Campaign recipe with sim_params overrides -> the config dict the model
+    factory and sampler need. CRITICAL: forward-pass constants (rescale,
+    channels, kernel_size) must come from the RUN's own record -- the factory
+    default for rescale (10**1.5) differs from the trained value (1.0), which
+    silently changes the network function (caught by the validation job's
+    energy self-check, 2026-09-01)."""
     return {
-        'Lx': int(sp.get('Lx', [2])[0]) if isinstance(sp.get('Lx'), list) else 2,
         'architecture': 'PlainCNN' if base == 'plain' else 'Combo',
         'symmetric_block': 'cnn',
-        'channels_noninv': [1, 32, 24, 8, 2] if base == 'plain' else [1, 16],
-        'channels_inv': [16, 8, 1],
-        'kernel_size': 2,
+        'channels_noninv': _sp(sp, 'n_chann_noninv',
+                               [1, 32, 24, 8, 2] if base == 'plain' else [1, 16]),
+        'channels_inv': _sp(sp, 'n_chann_inv', [16, 8, 1]),
+        'kernel_size': _sp(sp, 'kernel_size_noninv', 2),
+        'rescale': _sp(sp, 'rescale', 1.0),
         'dtype': 'complex' if (is_complex or hy != 0.0) else 'float64',
         'complex_ansatz': is_complex,
         'hx': hx, 'hy': hy, 'hz': hz,
         'use_custom_sampler': True,
         'n_samples': 8192, 'n_chains': 1024, 'n_discard': 8,
         'chunk_size': 2048, 'n_sweeps': 512, 'seed': 0,
-        'res_hidden': int((sp.get('res_hidden') or [16])[0]),
+        'res_hidden': _sp(sp, 'res_hidden', 16),
     }
 
 
