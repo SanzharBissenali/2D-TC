@@ -7602,5 +7602,116 @@
       "imag": 0.0004400684777509712
     },
     "runtime": 2513.93297290802
+  },
+  {
+    "run_id": "9b9c0968",
+    "timestamp": "2026-09-01 05:40:57",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.8,
+      "hy": 0.4,
+      "hz": 0.0,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_hx0.8_hz0_hy0.4_cnnqC_tie_sum.json",
+        "G-equiv_1_hc2x3_ds_hx0.8_hz0_hy0.4_cnnqC_tie_sum.mpack"
+      ]
+    },
+    "n_params": 19017,
+    "final_energy": {
+      "real": -31.68322071789597,
+      "imag": -0.0009594007905752984
+    },
+    "runtime": 2722.6973247528076
+  },
+  {
+    "run_id": "90ba1e90",
+    "timestamp": "2026-09-01 05:46:36",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.4,
+      "hz": 0.8,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_hx0_hz0.8_hy0.4_cnnqC_unionfind.json",
+        "G-equiv_1_hc2x3_ds_hx0_hz0.8_hy0.4_cnnqC_unionfind.mpack"
+      ]
+    },
+    "n_params": 19017,
+    "final_energy": {
+      "real": -44.9353666314593,
+      "imag": -7.765351479784244e-05
+    },
+    "runtime": 2145.800400495529
+  },
+  {
+    "run_id": "7b660931",
+    "timestamp": "2026-09-01 05:49:50",
+    "description": "Toric code simulation with neural network quantum states",
+    "config": {
+      "Lx": 2,
+      "bc": "OBC",
+      "architecture": "Combo",
+      "hx": 0.0,
+      "hy": 0.4,
+      "hz": 0.4,
+      "J": 1.0,
+      "Jy_p": 0.0,
+      "Jy_v": 0.0,
+      "Jbond": 0.0,
+      "channels_inv": [
+        16,
+        8,
+        1
+      ],
+      "channels_noninv": [
+        1,
+        16
+      ],
+      "n_samples": 8192,
+      "output_files": [
+        "G-equiv_1_hc2x3_ds_hx0_hz0.4_hy0.4_cnnqC_tie_sum.json",
+        "G-equiv_1_hc2x3_ds_hx0_hz0.4_hy0.4_cnnqC_tie_sum.mpack"
+      ]
+    },
+    "n_params": 19017,
+    "final_energy": {
+      "real": -34.80898393667294,
+      "imag": -0.0017989700107747114
+    },
+    "runtime": 2349.2002511024475
   }
 ]
