@@ -1026,3 +1026,52 @@ Key NERSC gotchas learned:
 - ED still needs `-G 1` even though it never touches the GPU (GPU-only allocation rule).
 - Do `pip install` on a login node (compute nodes have no internet). `$SCRATCH` is purged
   periodically → git is the durable store, re-clone if needed.
+
+## Current work — decoder scaling: speed & accuracy of the 5 QEC-head decoders vs N (2026-09-02)
+Overnight+day campaign (user asleep; blanket submit permission): two plots, five curves each, x = qubits N.
+Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `cluster.sh fetch`; figures →
+`figures/decoder_scaling/`). Field point (0.4, 0) for the in-vivo ladder (matches Phase-4c 2×3 data).
+- **Speed — optimized decoders LANDED (commit 1a2b7d9), bit-identical to the Phase-4c functions:**
+  numba greedy + union-find kernels (Python `_one_py` references retained), float32-GEMM anchor
+  (exact for counts < 2^24), compiled O(N) loop-parity counter replacing the 2^F sector table and the
+  int64 config packing (head now constructs in ms at 12×12; V≤62 tie_sum packing removed), head uses
+  `decoders.tie_eta(N)` (== 1e-4 for N ≤ 63, shrinks beyond so N ≥ 71 constructs), validity checks
+  opt-in (`check=True` in sign_fidelity grading only). Harness `scripts/decoder_regress.py` — 835 PASS
+  / 0 FAIL with numba on, 1×2..12×12, exhaustive ≤4-defect syndromes at 1×2/2×2, production-shaped
+  neighbourhoods at 4 densities, parity == 2^F table on all sector configs (F≤16) and == count_loops
+  beyond. Per-step `t_head` / `n_head_configs` / `step_wall` now logged in both optimizer loops
+  (JSON + W&B + tqdm); debug smoke 57855354 verified all 4 arm types (n_head_configs == 8192·(2+N+F)
+  exactly). Bench: `scripts/bench_decoders.py` + `jobs/nersc_bench_decoders.sh` (production-shaped
+  batches = base configs + all 1+N+F connected configs; per-cell budget; SIGALRM hard cap).
+  **Perlmutter (EPYC 7763, 1 thread, 2% flips) µs/config → s per VMC step:** N=27: mwpm 0.55/0.16 s,
+  anchor 0.36/0.10, greedy 0.24/0.07, UF 0.50/0.14, tie_sum 12/3.5; N=131: 2.3/3.1, 2.1/2.8, 1.3/1.8,
+  2.0/2.8, 81/112; N=479: 7.2/37, 9.7/50, 5.6/28, 6.2/32, tie_sum 19–94/95–480 (non-monotonic:
+  past its defect cap it silently falls back to mwpm). Speed-ups vs as-shipped at 4×4: greedy ~12×,
+  UF ~17×, anchor ~3×, mwpm ~1.3×. In vivo (A100 + host head): 4×4 head 0.5–0.8 s of ~21 s/step
+  (fast four) ⇒ head ≈ 3–4% of a step, GPU dominates; tie_sum 4×4 in vivo 76 s/step head ⇒ infeasible.
+  Head runs serially inside get_conn_padded (GPU idle meanwhile); untouched levers: numba prange over
+  rows (~20–30× on 32 cores) and decode reuse for the F hexagon-flip neighbours (local parity rule).
+- **Accuracy — exact ceilings 1−F_s vs N (new gradings 1×1,1×3,1×4 + existing 1×2,2×2,2×3; 1×5
+  running):** at (0.4,0) mwpm ≈ tie_sum flat ~1e-6 (6e-7..1.4e-6), greedy flat 2–4e-6, UF 1–5e-5,
+  anchor 6e-3..1.2e-2 growing with F; at (0.8,0.4) every ceiling grows ~linearly with N (anchor 14%
+  at 2×3). In vivo (cnnqB, 350 steps, seed 0): anchor 2–7e-3 = 30–70% of its ceiling (ceiling-
+  limited); the other four indistinguishable within single-seed noise, rel-err 1.1e-4 (N=11) →
+  3.9e-4 (N=27), 2–3 orders ABOVE their ceilings ⇒ budget-limited; V-score rises 4e-4 → 3e-3 with N.
+  3×3 (N=38, no ED): spread among the four good arms ≤ 1.4e-4 relative to the best arm.
+- **Trusted benchmark beyond ED (docs/benchmark_feasibility.md):** NO published method treats DS+hx at
+  any size. Sign-free QMC (Shackleton 2509.03708; Dupont–Gazit–Scaffidi 2008.06509) REQUIRES frozen
+  flux = our Q_v, which σˣ hops ⇒ no-go in principle for the hx cut; Hastings' theorem is for
+  commuting H (general statement is a conjecture). Route: own TeNPy strip DMRG (2×Ly, N=8Ly+3) via the
+  emitted Pauli strings, 3–5 days. Meanwhile: best-arm reference (all arms are variational upper
+  bounds) + the sampled ceiling proxy.
+- **Ceiling proxy (`scripts/decoder_disagreement.py`, `jobs/nersc_decoder_disagree.sh`):** sample
+  σ ~ |ψ|² from the trained mwpm arm, evaluate all 5 heads → D(dec, mwpm). Validated at N ≤ 24 vs the
+  exact |ψ_NQS|²-weighted D and the true 1−F_s: anchor reproduced to ~5%; UF/greedy/tie_sum
+  over-estimated 3–10× (D counts both directions + MWPM's own tie errors) ⇒ proxy = upper bound,
+  order-of-magnitude for the fast decoders, exact for the bad one.
+- **Ops:** 12/13 overnight jobs ran; 3 timeouts (1×5 ceilings in the 2 h ladder job → resubmitted
+  alone -t 2:30; 3×3 anchor/greedy at 1:00/1:30 → rerun 1:30). 4×4 arms take ~21 s/step ⇒ 350 steps
+  need ~2.1 h: the -t 1:45 jobs cut at ~280–305 steps (converged, V ~6e-3; rerun at -t 3:00 if exact
+  350-step parity matters). Rate-limit gap 02:20–13:30 killed two agents mid-verification; their work
+  was reviewed, re-verified (harness + smoke) and committed by hand. NEVER `cluster.sh sync` while
+  jobs are pending — pending jobs read main.py at start. Background `sleep` polls > ~30 min get killed.
