@@ -1084,3 +1084,23 @@ Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `clu
   identity is unset (login24: 'unable to auto-detect email address') — just retry (another node). Rate-limit gap 02:20–13:30 killed two agents mid-verification; their work
   was reviewed, re-verified (harness + smoke) and committed by hand. NEVER `cluster.sh sync` while
   jobs are pending — pending jobs read main.py at start. Background `sleep` polls > ~30 min get killed.
+- **Head parallelism + hexagon-flip reuse LANDED (2026-09-02 evening, commit 526b75b; bit-identical: 890 PASS at
+  1 and 8 threads, local parity rule `parity(r⊕mask_p) = parity(r) ⊕ 1 ⊕ ((n_down_legs_p(r)//2)&1)` = the DS
+  plaquette phase, verified on 700k random flips):** all per-row kernels `prange`; `QECSignHead.sign_pm1_conn(x, xp)`
+  decodes each sample once and serves identity/hexagon-flip rows from it (tie_sum excluded); `SignFramedOperator`
+  uses it. pymatching `decode_batch` HOLDS the GIL ⇒ MWPM decode stays single-threaded (Amdahl floor).
+  **GOTCHA — pin BLAS separately from numba:** 32 numba + 32 OpenBLAS threads made the head 30–50× SLOWER than
+  single-threaded at N=27–38 (OpenBLAS workers busy-wait and starve numba). Bench `--threads` (numba) and
+  `--blas_threads` (default 1); `jobs/nersc_timing_ladder.sh` exports OMP/OPENBLAS/MKL=1 with NUMBA=32.
+  **Perlmutter, production path (conn), 32 numba threads, BLAS=1, 0.5% flips, µs/config (vs flat/1-thread):**
+  N=27 mwpm 0.34 (0.44), greedy 0.16 (0.26), UF 0.18 (0.45), anchor 0.26 (0.37); N=479 mwpm 2.08 (5.25),
+  greedy 1.28 (4.55), UF 1.34 (6.12), anchor 5.66 (9.97) ⇒ head s/step at N=479: 10.6/6.6/6.8/29. numba layer omp.
+  tie_sum: no shortcut, 2→94 µs (N=11→479).
+- **In-vivo timing ladder (`jobs/nersc_timing_ladder.sh`, jobids `*_tim_*`, (hx,hz)=(0.8,0.4), 100 steps, plateau
+  median steps 50–99, W&B hc-timing):** GPU-only (`cnn`, no head) step_wall 0.35/1.81/4.11/8.92 s at N=11/19/27/38;
+  head share of the step: mwpm 8%→2.4%, greedy & UF 2%→0.8%, anchor 4%→1.6%, tie_sum 12%→12% (N=11→38).
+  Node-to-node noise of the shared queue is ±20–40% on step_wall (2×3 anchor 5.7 s vs cnn 4.1 s with head 0.07 s)
+  ⇒ compare via t_head/step_wall, not raw totals. **5×5 tie_sum at (0.8,0.4) does NOT recover on the plateau:
+  36 s of a 71 s step (50%) at step 86** — at strong field tie_sum is a genuine bottleneck; the four fast decoders are not.
+  4×4/5×5 fast arms: queued (priority backlog after ~60 jobs/day). Figure 3 in analysis/06 (total, head-subtracted
+  collapse, head share).
