@@ -1,0 +1,290 @@
+{
+ "Lx": 1,
+ "Ly": 5,
+ "model": "ds",
+ "N": 26,
+ "head": "qec-mwpm decoder-A",
+ "decoders": [
+  "mwpm",
+  "anchor",
+  "greedy",
+  "unionfind",
+  "tie_sum"
+ ],
+ "tiesum_dmax": 10,
+ "points": [
+  {
+   "hx": 0.0,
+   "hz": 0.0,
+   "model": "ds",
+   "k": 1,
+   "E0": -27.0,
+   "F_s": 1.0,
+   "F_plus": 0.5,
+   "onsector_weight": 1.0,
+   "tie_disagree_weight": 9.171e-20,
+   "wrong_weight": 0.0,
+   "decoders": {
+    "mwpm": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "anchor": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "greedy": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "unionfind": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "tie_sum": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    }
+   }
+  },
+  {
+   "hx": 0.0,
+   "hz": 0.4,
+   "model": "ds",
+   "k": 1,
+   "E0": -33.41160155,
+   "F_s": 1.0,
+   "F_plus": 0.824852844,
+   "onsector_weight": 1.0,
+   "tie_disagree_weight": 4.956e-18,
+   "wrong_weight": 0.0,
+   "decoders": {
+    "mwpm": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "anchor": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "greedy": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "unionfind": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "tie_sum": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    }
+   }
+  },
+  {
+   "hx": 0.0,
+   "hz": 0.8,
+   "model": "ds",
+   "k": 1,
+   "E0": -43.31700925,
+   "F_s": 1.0,
+   "F_plus": 0.948689717,
+   "onsector_weight": 1.0,
+   "tie_disagree_weight": 9.387e-21,
+   "wrong_weight": 0.0,
+   "decoders": {
+    "mwpm": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "anchor": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "greedy": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "unionfind": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    },
+    "tie_sum": {
+     "F_s": 1.0,
+     "wrong_weight": 0.0
+    }
+   }
+  },
+  {
+   "hx": 0.4,
+   "hz": 0.0,
+   "model": "ds",
+   "k": 1,
+   "E0": -27.73858959,
+   "F_s": 0.999998915,
+   "F_plus": 0.499999998,
+   "onsector_weight": 0.873375458,
+   "tie_disagree_weight": 3.263e-06,
+   "wrong_weight": 1.085e-06,
+   "decoders": {
+    "mwpm": {
+     "F_s": 0.99999891465702,
+     "wrong_weight": 1.08534298e-06
+    },
+    "anchor": {
+     "F_s": 0.98542530449,
+     "wrong_weight": 0.01457469551
+    },
+    "greedy": {
+     "F_s": 0.999995443480672,
+     "wrong_weight": 4.556519328e-06
+    },
+    "unionfind": {
+     "F_s": 0.99995106168919,
+     "wrong_weight": 4.893831081e-05
+    },
+    "tie_sum": {
+     "F_s": 0.999998952111878,
+     "wrong_weight": 1.047888122e-06
+    }
+   }
+  },
+  {
+   "hx": 0.4,
+   "hz": 0.4,
+   "model": "ds",
+   "k": 1,
+   "E0": -34.20234896,
+   "F_s": 0.999954817,
+   "F_plus": 0.837027735,
+   "onsector_weight": 0.856581919,
+   "tie_disagree_weight": 9.038e-05,
+   "wrong_weight": 4.518e-05,
+   "decoders": {
+    "mwpm": {
+     "F_s": 0.9999548169561,
+     "wrong_weight": 4.51830439e-05
+    },
+    "anchor": {
+     "F_s": 0.9711420599,
+     "wrong_weight": 0.0288579401
+    },
+    "greedy": {
+     "F_s": 0.99994843907508,
+     "wrong_weight": 5.156092492e-05
+    },
+    "unionfind": {
+     "F_s": 0.9998450240141,
+     "wrong_weight": 0.0001549759859
+    },
+    "tie_sum": {
+     "F_s": 0.99995476591844,
+     "wrong_weight": 4.523408156e-05
+    }
+   }
+  },
+  {
+   "hx": 0.4,
+   "hz": 0.8,
+   "model": "ds",
+   "k": 1,
+   "E0": -44.03169708,
+   "F_s": 0.999981455,
+   "F_plus": 0.951803735,
+   "onsector_weight": 0.882879827,
+   "tie_disagree_weight": 3.705e-05,
+   "wrong_weight": 1.854e-05,
+   "decoders": {
+    "mwpm": {
+     "F_s": 0.99998145512885,
+     "wrong_weight": 1.854487115e-05
+    },
+    "anchor": {
+     "F_s": 0.97628077871,
+     "wrong_weight": 0.02371922129
+    },
+    "greedy": {
+     "F_s": 0.99997876993723,
+     "wrong_weight": 2.123006277e-05
+    },
+    "unionfind": {
+     "F_s": 0.99991177912446,
+     "wrong_weight": 8.822087554e-05
+    },
+    "tie_sum": {
+     "F_s": 0.99998144542751,
+     "wrong_weight": 1.855457249e-05
+    }
+   }
+  },
+  {
+   "hx": 0.8,
+   "hz": 0.0,
+   "model": "ds",
+   "k": 1,
+   "E0": -30.08406638,
+   "F_s": 0.999799968,
+   "F_plus": 0.500000003,
+   "onsector_weight": 0.525700494,
+   "tie_disagree_weight": 0.0004086,
+   "wrong_weight": 0.0002,
+   "decoders": {
+    "mwpm": {
+     "F_s": 0.9997999682864,
+     "wrong_weight": 0.0002000317136
+    },
+    "anchor": {
+     "F_s": 0.93677173049,
+     "wrong_weight": 0.06322826951
+    },
+    "greedy": {
+     "F_s": 0.9995103939196,
+     "wrong_weight": 0.0004896060804
+    },
+    "unionfind": {
+     "F_s": 0.998828625914,
+     "wrong_weight": 0.001171374086
+    },
+    "tie_sum": {
+     "F_s": 0.9998865172881,
+     "wrong_weight": 0.0001134827119
+    }
+   }
+  },
+  {
+   "hx": 0.8,
+   "hz": 0.4,
+   "model": "ds",
+   "k": 1,
+   "E0": -36.6606109,
+   "F_s": 0.996413754,
+   "F_plus": 0.877033451,
+   "onsector_weight": 0.501275823,
+   "tie_disagree_weight": 0.00691,
+   "wrong_weight": 0.003586,
+   "decoders": {
+    "mwpm": {
+     "F_s": 0.996413754212,
+     "wrong_weight": 0.003586245788
+    },
+    "anchor": {
+     "F_s": 0.8750084058,
+     "wrong_weight": 0.1249915942
+    },
+    "greedy": {
+     "F_s": 0.99593272812,
+     "wrong_weight": 0.00406727188
+    },
+    "unionfind": {
+     "F_s": 0.994266941307,
+     "wrong_weight": 0.005733058693
+    },
+    "tie_sum": {
+     "F_s": 0.996350381322,
+     "wrong_weight": 0.003649618678
+    }
+   }
+  }
+ ],
+ "source": "RECONSTRUCTED from logs/hc_sfladder_57855371.out (jobs/nersc_signfid_ladder.sh, 2026-09-02): the job hit its 2:30 walltime during the 9th point (0.8,0.8) before sign_fidelity's single end-of-run write; the 8 completed rows are transcribed verbatim from the printed table (E0 = k=1 Lanczos tol 1e-8; per-decoder 1-F_s columns). Fields not printed (evals, by-defect breakdowns, timings) are omitted."
+}

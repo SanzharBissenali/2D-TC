@@ -477,6 +477,25 @@ def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0,
     }
 
 
+def _write_out(args, g, dec_names, dec_tables, records):
+    """Write the output JSON (called after EVERY point so a walltime kill keeps the
+    finished rows -- the 2026-09-02 1x5 ladder job lost 8 graded points to a single
+    end-of-run write). Atomic via a temp file."""
+    outdir = os.path.dirname(args.out)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
+    payload = {"Lx": args.Lx, "Ly": args.Ly, "model": args.model,
+               "N": g.N, "head": "MWPM(unit weights) + count_loops",
+               "tie_eta": TIE_ETA, "hy": args.hy,
+               **({"decoders": dec_names, "tiesum_dmax": args.tiesum_dmax}
+                  if dec_tables is not None else {}),
+               "points": records}
+    tmp = args.out + ".part"
+    with open(tmp, "w") as f:
+        json.dump(payload, f, indent=1)
+    os.replace(tmp, args.out)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--Lx", type=int, required=True)
@@ -538,6 +557,8 @@ def main():
             line += "".join(f" {r['decoders'][n]['wrong_weight']:16.9e}"
                             for n in dec_names)
             print(line, flush=True)
+            if args.out:
+                _write_out(args, g, dec_names, dec_tables, records)   # keep finished points on a walltime kill
             continue
         r = run_point(g, args.model, hx, hz, args.k, table, matchings,
                       args.chunk, tol=args.tol, dec_tables=dec_tables)
@@ -549,19 +570,11 @@ def main():
             line += "".join(f" {r['decoders'][n]['wrong_weight']:16.9e}"
                             for n in dec_names)
         print(line, flush=True)
+        if args.out:
+            _write_out(args, g, dec_names, dec_tables, records)       # keep finished points on a walltime kill
 
     if args.out:
-        outdir = os.path.dirname(args.out)
-        if outdir:
-            os.makedirs(outdir, exist_ok=True)
-        with open(args.out, "w") as f:
-            json.dump({"Lx": args.Lx, "Ly": args.Ly, "model": args.model,
-                       "N": g.N, "head": "MWPM(unit weights) + count_loops",
-                       "tie_eta": TIE_ETA, "hy": args.hy,
-                       **({"decoders": dec_names,
-                           "tiesum_dmax": args.tiesum_dmax}
-                          if dec_tables is not None else {}),
-                       "points": records}, f, indent=1)
+        _write_out(args, g, dec_names, dec_tables, records)
         print(f"# wrote {args.out}", flush=True)
 
 
