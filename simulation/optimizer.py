@@ -76,7 +76,9 @@ def _qgt_cond(S):
         return {"error": str(e)[:100]}
 
 # --- QEC sign-head accounting (Phase 4 honeycomb arms; no-op otherwise) -------------
-HEAD_KEYS = ["t_head", "n_head_configs"]   # per-step JSON fields (str-serialized like the rest)
+HEAD_KEYS = ["t_head", "n_head_configs", "step_wall"]   # per-step JSON fields (str-serialized like the rest)
+# step_wall = wall-clock between consecutive per-step JSON appends (the full step incl.
+# callbacks/observables) -- the denominator for the head-time share in analysis/06.
 
 
 def _resolve_head(hamiltonian, head):
@@ -152,6 +154,7 @@ def run_tdvp(
 
     head = _resolve_head(hamiltonian, head)
     _ensure_keys(filename, HEAD_KEYS)
+    t_log_prev = time.time()
 
     loop = tqdm(range(n_iter))
     t = t_start
@@ -198,6 +201,7 @@ def run_tdvp(
         # Sign-head accounting for this step (host time inside get_conn_padded /
         # pure_callback; covers everything since the previous pop)
         t_head, n_head = _head_stats(head)
+        step_wall, t_log_prev = time.time() - t_log_prev, time.time()
 
         # Save optimization data
         update_data(filename, [
@@ -210,7 +214,7 @@ def run_tdvp(
             E.R_hat, config['N'] * E.variance / E.mean**2,
             vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps,
             t_sample, t_grad, t_sr, grad_norm, dtheta_norm, dt_step,
-            t_head, n_head
+            t_head, n_head, step_wall
         ])
 
         # Check for NaN values
@@ -369,6 +373,7 @@ def run_minsr(
 
     head = _resolve_head(hamiltonian, head)
     _ensure_keys(filename, HEAD_KEYS)
+    t_log_prev = time.time()
 
     loop = tqdm(range(n_iter))
     t = 0.0
@@ -387,6 +392,7 @@ def run_minsr(
         dtheta_norm = _tree_norm(delta) / max(lr_step, 1e-300)
 
         t_head, n_head = _head_stats(head)      # host head time inside driver.advance
+        step_wall, t_log_prev = time.time() - t_log_prev, time.time()
 
         update_data(filename, [
             "iters", "energy", "energy_eom", "energy_var", "tau_corr",
@@ -398,7 +404,7 @@ def run_minsr(
             E.R_hat, config['N'] * E.variance / E.mean**2,
             vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps,
             0.0, 0.0, 0.0, 0.0, dtheta_norm, lr_step,
-            t_head, n_head
+            t_head, n_head, step_wall
         ])
 
         if jnp.isnan(E.mean):
