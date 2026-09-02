@@ -139,6 +139,7 @@ def main():
     save_data(config['filename'], data)
     
     is_honeycomb = config.get('lattice', 'square') == 'honeycomb'
+    head = None                       # sign head (honeycomb + --sign_head qec only)
     if is_honeycomb:
         # Honeycomb (Levin-Gu TC / doubled semion), Phase 2 wiring. Imports are
         # lazy so the square path never depends on the honeycomb modules.
@@ -156,6 +157,7 @@ def main():
         model = create_honeycomb_model(config, geometry)
         base_model = model            # pre-sign-head network (gates run on this)
         sign_frame_head = None        # set iff impl 'operator' (observables re-frame)
+        head = None                   # QECSignHead (any impl) -> optimizer per-step head timing
         if config.get('sign_head', 'none') == 'qec':
             # Phase-4 QEC sign head: psi = (-1)^{s(sigma)} A_theta(sigma) with
             # s = MWPM-recovered loop parity (model/sign_head.py). Two exactly
@@ -176,7 +178,7 @@ def main():
                 H = SignFramedOperator(H, head)
                 sign_frame_head = head
                 print(f"[sign head] qec/operator: training on H~ = SHS "
-                      f"(loop table 2^{head.F}, decoder "
+                      f"(compiled loop parity, N={head.N} F={head.F}, decoder "
                       f"{config.get('decoder', 'mwpm')})")
             elif config.get('sign_impl') == 'residual':
                 from model.honeycomb_networks import ResidualSignedModel
@@ -190,7 +192,7 @@ def main():
                 from model.honeycomb_networks import SignedModel
                 model = SignedModel(base_model, head.s01)
                 print(f"[sign head] qec/model: log psi += i*pi*s(sigma) via "
-                      f"pure_callback (loop table 2^{head.F}, decoder-A MWPM)")
+                      f"pure_callback (compiled loop parity, decoder-A MWPM)")
         print(model)
     else:
         # Set up the geometry
@@ -370,7 +372,8 @@ def main():
         hamiltonian=H,
         vstate=vs,
         config=config,
-        callbacks=callbacks
+        callbacks=callbacks,
+        head=head,                 # per-step t_head / n_head_configs logging (None => 0s)
     )
     
     # Save the final model

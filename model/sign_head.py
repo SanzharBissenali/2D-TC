@@ -12,10 +12,22 @@ error channel is tie-degenerate recoveries (semion interference), ~hx^10 and
 size-independent.
 
 Production convention (frozen): pymatching sparse blossom on the link graph
-with sign_fidelity's DECODER-A weights 1 + 1e-4*arange(N) -- a deterministic
-tie-break that never changes the optimal cardinality (asserted; adversarially
-verified, incl. vs fusion-blossom). ONE Matching object per run so the head is
-a fixed function of sigma for the whole optimization.
+with sign_fidelity's DECODER-A weights 1 + eta*arange(N), eta = TIE_ETA = 1e-4
+at every size graded so far (N <= 63; model/decoders.tie_eta shrinks it as
+0.4/N^2 beyond, where 1e-4 would break the minimality assert -- 6x6+) -- a
+deterministic tie-break that never changes the optimal cardinality (asserted;
+adversarially verified, incl. vs fusion-blossom). ONE Matching object per run
+so the head is a fixed function of sigma for the whole optimization.
+
+Scalable implementation (2026-09-02, docs/decoder_scaling.md): the loop parity
+is a compiled union-find component counter over the recovered link bits
+(model/decoders.loop_parity01 -- the same count as exact/loops.count_loops, so
+bit-identical), replacing the 2^F sector table + int64 config packing that
+capped the head at F <= ~20 / N <= 62. Construction is O(N) (no 2^F loop),
+the syndrome is a vectorized gather, and every call is wall-clock accounted
+(``t_head`` / ``n_head_configs``, drained by ``pop_head_stats`` for the
+optimizer's per-step logging). scripts/decoder_regress.py asserts s01() is
+bitwise identical to the table-based head for every decoder.
 
 Host/numpy only (pymatching is not JAX-traceable). Consumers:
   - model/sign_frame.SignFramedOperator (formulation B, production): multiplies
@@ -28,9 +40,11 @@ bit 1 = spin DOWN (sigma^z = -1), all-up = 0. NetKet samples are +-1 floats;
 bit = (spin < 0).
 """
 
+import time
+
 import numpy as np
 
-TIE_ETA = 1e-4  # decoder-A tie-break; minimality preserved while eta*N^2 < 1
+TIE_ETA = 1e-4  # decoder-A tie-break slope for N <= 63 (== decoders.tie_eta there)
 
 
 class QECSignHead:
@@ -48,19 +62,25 @@ class QECSignHead:
         import scipy.sparse as sp
         from pymatching import Matching
 
-        from exact.loops import count_loops
+        from model.decoders import loop_parity01, tie_eta
 
         self.N = int(geometry.N)
         self.V = int(geometry.n_vertices)
         self.F = int(geometry.n_plaqs)
         self._vertex_all = np.asarray(geometry.vertex_all)
-        self._bit_values = (1 << np.arange(self.N, dtype=np.int64))
+        self._ends = np.ascontiguousarray(geometry.link_endpoints, dtype=np.int32)
+        # syndrome gather table: -1 slots point at a zero pad column (index N)
+        self._synd_idx = np.where(self._vertex_all < 0, self.N,
+                                  self._vertex_all).astype(np.int64)
+        self._parity = loop_parity01
 
         rows = np.asarray(geometry.link_endpoints).T.ravel()
         cols = np.tile(np.arange(self.N), 2)
         Hchk = sp.csc_matrix((np.ones(2 * self.N, dtype=np.uint8), (rows, cols)),
                              shape=(self.V, self.N))
-        pert = TIE_ETA * np.arange(self.N)
+        eta = tie_eta(self.N)                    # == TIE_ETA (1e-4) for N <= 63
+        assert self.N > 63 or eta == TIE_ETA
+        pert = eta * np.arange(self.N)
         assert pert.max() * self.N < 0.5, "tie perturbation could reorder cardinalities"
         self._matching = Matching.from_check_matrix(Hchk, weights=1.0 + pert)
         # decoder B (reversed tie-break, sign_fidelity's second decoder):
@@ -68,38 +88,32 @@ class QECSignHead:
         # production sign s01/sign_pm1 stays pure decoder-A.
         self._matching_b = Matching.from_check_matrix(Hchk, weights=1.0 + pert[::-1])
 
-        # (-1)^{#loops} on the whole zero-charge sector, keyed by config int
-        # (2^F entries -- the hexagon flips enumerate the sector bijectively).
-        masks = [int(np.bitwise_or.reduce(1 << geometry.plaq_all[p].astype(np.int64)))
-                 for p in range(self.F)]
-        table = {}
-        for S in range(1 << self.F):
-            x = 0
-            for p in range(self.F):
-                if (S >> p) & 1:
-                    x ^= masks[p]
-            z = 1 - 2 * ((x >> np.arange(self.N)) & 1)
-            table[x] = count_loops(z, geometry.link_endpoints) % 2
-        assert len(table) == 1 << self.F, "hexagon flips are not independent?!"
-        self._s01_table = table
+        # wall-clock accounting (drained per optimizer step via pop_head_stats)
+        self.t_head = 0.0
+        self.n_head_configs = 0
+        self._t_popped = 0.0
+        self._n_popped = 0
 
         self.decoder_name = str(decoder)
         if self.decoder_name != 'mwpm':
             from model.decoders import DECODER_NAMES, make_decoder
             assert self.decoder_name in DECODER_NAMES, \
                 f"unknown decoder '{self.decoder_name}'"
-            self._alt = make_decoder(self.decoder_name, geometry)
-            # flat parity array (same values as _s01_table) -- vectorizes the
-            # alt-decoder parity lookups; -1 marks off-sector (asserted away)
-            self._s01_arr = None
-            if self.N <= 24:
-                arr = np.full(1 << self.N, -1, dtype=np.int8)
-                for x, s in table.items():
-                    arr[x] = s
-                self._s01_arr = arr
+            # production: no per-call validity matmul (the parity kernel
+            # flags any off-sector recovery with -1, asserted below)
+            self._alt = make_decoder(self.decoder_name, geometry, check=False)
         else:
             self._alt = None
 
+    # -- instrumentation ---------------------------------------------------
+    def pop_head_stats(self):
+        """(seconds, #configurations) spent in the head since the last pop."""
+        dt = self.t_head - self._t_popped
+        n = self.n_head_configs - self._n_popped
+        self._t_popped, self._n_popped = self.t_head, self.n_head_configs
+        return dt, n
+
+    # -- primitives ----------------------------------------------------------
     def _bits(self, states):
         """(B, N) +-1 spins (any float/int dtype) -> (B, N) uint8 bits."""
         states = np.asarray(states)
@@ -108,41 +122,31 @@ class QECSignHead:
         return (states.reshape(-1, self.N) < 0).astype(np.uint8)
 
     def _syndrome(self, bits):
-        synd = np.zeros((bits.shape[0], self.V), dtype=np.uint8)
-        for v in range(self.V):
-            for l in self._vertex_all[v]:
-                if l != -1:
-                    synd[:, v] ^= bits[:, int(l)]
-        return synd
-
-    def _decode(self, matching, bits, synd):
-        """(loop parity s01, correction bit rows) for one decoder."""
-        corr = matching.decode_batch(synd).astype(np.int64)
-        recovered = (bits.astype(np.int64) @ self._bit_values) \
-            ^ (corr @ self._bit_values)
-        s = np.empty(bits.shape[0], dtype=np.float64)
-        for i, x in enumerate(recovered):
-            s[i] = self._s01_table[int(x)]     # KeyError == recovery failed
-        return s, corr
+        """(B, N) bits -> (B, V) Q_v syndrome bits (XOR over each vertex's
+        existing links; vectorized gather, -1 slots hit a zero column)."""
+        pad = np.zeros((bits.shape[0], self.N + 1), dtype=np.uint8)
+        pad[:, :self.N] = bits
+        return np.bitwise_xor.reduce(pad[:, self._synd_idx], axis=2)
 
     def _parity01_bits(self, bits):
         """(K, N) uint8 zero-syndrome config bits -> {0., 1.} loop parities
-        via the sector table (used by the non-mwpm decoder paths)."""
-        x = bits.astype(np.int64) @ self._bit_values
-        if getattr(self, '_s01_arr', None) is not None:
-            s = self._s01_arr[x]
-            assert (s >= 0).all(), "recovery left the sector?!"
-            return s.astype(np.float64)
-        s = np.empty(bits.shape[0], dtype=np.float64)
-        for i, xi in enumerate(x):
-            s[i] = self._s01_table[int(xi)]    # KeyError == recovery failed
-        return s
+        (compiled union-find counter; an off-sector row is a decoder bug)."""
+        s = self._parity(bits, self._ends, self.V)
+        assert (s >= 0).all(), "recovery left the sector?!"
+        return s.astype(np.float64)
 
+    def _decode(self, matching, bits, synd):
+        """(loop parity s01, correction bit rows (B, N) uint8) for one decoder."""
+        corr = matching.decode_batch(synd).astype(np.uint8)
+        return self._parity01_bits(bits ^ corr), corr
+
+    # -- public ------------------------------------------------------------
     def s01(self, states):
         """Loop parity s(sigma) in {0., 1.} for a batch of +-1 configs.
 
         Accepts any leading shape; returns float64 with the leading shape.
         """
+        t0 = time.perf_counter()
         states = np.asarray(states)
         lead = states.shape[:-1]
         bits = self._bits(states)
@@ -154,6 +158,8 @@ class QECSignHead:
         else:
             corr = self._alt.corrections(synd).astype(np.uint8)
             s = self._parity01_bits(bits ^ corr)
+        self.t_head += time.perf_counter() - t0
+        self.n_head_configs += int(bits.shape[0])
         return s.reshape(lead)
 
     def sign_pm1(self, states):
@@ -180,6 +186,7 @@ class QECSignHead:
         assert self._alt is None, \
             "features() is decoder-A/B MWPM machinery (residual arm); " \
             "pair --sign_impl residual with --decoder mwpm"
+        t0 = time.perf_counter()
         states = np.asarray(states)
         lead = states.shape[:-1]
         bits = self._bits(states)
@@ -190,4 +197,6 @@ class QECSignHead:
         t = (s_a != s_b).astype(np.float64)
         out = np.concatenate(
             [s_a[:, None], synd.astype(np.float64), r, t[:, None]], axis=1)
+        self.t_head += time.perf_counter() - t0
+        self.n_head_configs += int(bits.shape[0])
         return out.reshape(lead + (self.n_features,))

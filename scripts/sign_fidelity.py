@@ -187,7 +187,7 @@ def build_decoder_tables(g, names, tiesum_dmax, unpack_chunk=1 << 16):
         corr_names.append("mwpm")
     for name in corr_names:
         t0 = time.time()
-        dec = make_decoder(name, g)
+        dec = make_decoder(name, g, check=True)      # grading: keep validity assert
         mask = np.empty(S, dtype=np.int64)
         for lo in range(0, S, unpack_chunk):
             corr = dec.corrections(synd_bits[lo:lo + unpack_chunk])
@@ -198,7 +198,7 @@ def build_decoder_tables(g, names, tiesum_dmax, unpack_chunk=1 << 16):
 
     if "tie_sum" in names:
         t0 = time.time()
-        ts = make_decoder("tie_sum", g, d_max=tiesum_dmax)
+        ts = make_decoder("tie_sum", g, d_max=tiesum_dmax, check=True)
         classes = [None] * S                            # None => fallback
         truncated = np.zeros(S, dtype=bool)
         n_fb = 0
