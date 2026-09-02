@@ -66,9 +66,17 @@ the per-call boundary matmul was a hidden 60-77 us/row tax at 12x12. The
 per-syndrome memo caches of greedy/unionfind were dropped: the compiled
 kernels beat the dict lookups they were hiding, and production flip
 neighbourhoods are provably cache-hostile (docs/decoder_scaling.md Sec. 2).
-Kernels are single-threaded by default (reproducible timings; the head runs
-inside netket's host get_conn_padded). If numba is unavailable the kernels
-run as plain Python (slow, identical results).
+Row parallelism (2026-09-02): every per-row kernel loop is a ``numba.prange``
+(``parallel=True``) -- rows are independent, all scratch is allocated inside
+the loop body, and the only cross-row state is the ``nbad`` counter (a numba
+reduction), so per-row results are identical at any thread count. The thread
+count follows numba's default (the ``NUMBA_NUM_THREADS`` env var, default =
+core count) or ``effective_threads(n)``; ``NUMBA_NUM_THREADS=1`` is the
+reproducible-timing mode. pymatching's ``decode_batch`` HOLDS the GIL
+(measured: 8 Python threads with one Matching each are 1.7x SLOWER than a
+single call at 12x12 / 500k rows), so the MWPM decode stays single-threaded.
+If numba is unavailable the kernels run as plain Python (slow, identical
+results).
 
 Bit convention matches model/sign_head.py: bit 1 = spin down, site i <-> bit i.
 """
@@ -78,11 +86,14 @@ import itertools
 import numpy as np
 
 try:
-    from numba import njit as _njit
+    import numba as _numba
+    from numba import njit as _njit, prange as _prange
     HAVE_NUMBA = True
 except ImportError:                                   # pragma: no cover
     import warnings
     HAVE_NUMBA = False
+    _numba = None
+    _prange = range
     warnings.warn("model.decoders: numba not importable -- decoder/parity kernels "
                   "run as plain Python (identical results, ~100x slower)",
                   RuntimeWarning, stacklevel=2)
@@ -94,6 +105,24 @@ except ImportError:                                   # pragma: no cover
 
 DECODER_NAMES = ("mwpm", "anchor", "greedy", "unionfind", "tie_sum")
 _INF32 = np.iinfo(np.int32).max
+
+
+def effective_threads(n_threads=None):
+    """Numba thread count used by the prange kernels on the CALLING thread.
+
+    ``n_threads=None`` leaves numba's default alone (``NUMBA_NUM_THREADS`` env
+    var, else the core count); an integer is applied via
+    ``numba.set_num_threads`` after clamping to ``[1, NUMBA_NUM_THREADS]``
+    (numba cannot exceed its launch-time maximum). Returns the effective
+    count (1 without numba). numba's setting is thread-local, so call this on
+    the thread that runs the kernels (the head does so in its constructor;
+    production runs the head on netket's main host thread)."""
+    if not HAVE_NUMBA:
+        return 1
+    if n_threads is not None:
+        n = max(1, min(int(n_threads), int(_numba.config.NUMBA_NUM_THREADS)))
+        _numba.set_num_threads(n)
+    return int(_numba.get_num_threads())
 
 
 def tie_eta(N):
@@ -118,18 +147,19 @@ def _find_root(parent, a):
     return a
 
 
-@_njit(cache=True)
+@_njit(parallel=True, cache=True)
 def _loop_parity_kernel(bits, ends, V, out):
     """(K, N) uint8 down-link bits -> out[k] = (#connected components of the
     down subgraph) mod 2, or -1 if some vertex has odd down-degree (== the
     strict-input assert of exact/loops.count_loops). Union-find over the
     vertices touched by down links: +1 component per newly seen vertex, -1
     per merging union -- the same count as count_loops, so the parity is
-    bit-identical by construction (a component count is algorithm-free)."""
+    bit-identical by construction (a component count is algorithm-free).
+    Rows run in parallel (prange); scratch is per row."""
     K, N = bits.shape
-    parent = np.empty(V, np.int32)
-    deg = np.empty(V, np.int32)
-    for k in range(K):
+    for k in _prange(K):
+        parent = np.empty(V, np.int32)
+        deg = np.empty(V, np.int32)
         for v in range(V):
             parent[v] = -1
             deg[v] = 0
@@ -174,14 +204,15 @@ def loop_parity01(bits, link_endpoints, V):
     return out
 
 
-@_njit(cache=True)
+@_njit(parallel=True, cache=True)
 def _bfs_all_pairs(indptr, nbr_v, nbr_l, dist, pvert, plink):
     """FIFO BFS from every source over the CSR adjacency (sorted by
     (vertex, link)) -- identical discovery order to the level-list Python
-    BFS of _VertexGraph._build_py, hence identical parent tables."""
+    BFS of _VertexGraph._build_py, hence identical parent tables. Sources
+    run in parallel (each writes only its own table rows)."""
     V = indptr.shape[0] - 1
-    queue = np.empty(V, np.int32)
-    for s in range(V):
+    for s in _prange(V):
+        queue = np.empty(V, np.int32)
         dist[s, s] = 0
         queue[0] = s
         qh = 0
@@ -200,18 +231,19 @@ def _bfs_all_pairs(indptr, nbr_v, nbr_l, dist, pvert, plink):
                     qt += 1
 
 
-@_njit(cache=True)
+@_njit(parallel=True, cache=True)
 def _greedy_kernel(synd, dist, pvert, plink, out):
     """GreedyDecoder._one_py for every row: repeatedly take the pair (u, v),
     u < v, minimizing (dist, u, v) lexicographically -- scanning the ascending
     defect list with a strict '<' on dist reproduces the tuple compare exactly
     -- and XOR the canonical BFS path rooted at u. Returns #rows left with an
-    unpaired defect (odd syndrome weight; 0 for valid input)."""
+    unpaired defect (odd syndrome weight; 0 for valid input). Rows run in
+    parallel (prange; ``nbad`` is a reduction, scratch is per row)."""
     B, V = synd.shape
-    defects = np.empty(V, np.int32)
-    alive = np.empty(V, np.uint8)
     nbad = 0
-    for b in range(B):
+    for b in _prange(B):
+        defects = np.empty(V, np.int32)
+        alive = np.empty(V, np.uint8)
         d = 0
         for v in range(V):
             if synd[b, v]:
@@ -248,7 +280,7 @@ def _greedy_kernel(synd, dist, pvert, plink, out):
     return nbad
 
 
-@_njit(cache=True)
+@_njit(parallel=True, cache=True)
 def _uf_kernel(synd, indptr, nbr_v, nbr_l, ends, out):
     """UnionFindDecoder._one_py for every row (Delfosse--Nickerson,
     unweighted synchronous growth, root = min vertex index, then DFS-forest
@@ -259,23 +291,24 @@ def _uf_kernel(synd, indptr, nbr_v, nbr_l, ends, out):
     ascending link order == the reference's sorted (l, u, v) order. The peel
     replays the reference's iterative DFS verbatim (pop, scan sorted
     adjacency, mark-on-push). Returns #rows whose peel left parity behind or
-    whose growth stalled (odd total parity; 0 for valid input)."""
+    whose growth stalled (odd total parity; 0 for valid input). Rows run in
+    parallel (prange; ``nbad`` is a reduction, scratch is per row)."""
     B, V = synd.shape
     N = out.shape[1]
-    parent = np.empty(V, np.int32)
-    par = np.empty(V, np.uint8)
-    in_cl = np.empty(V, np.uint8)
-    odd_v = np.empty(V, np.uint8)
-    erasure = np.empty(N, np.uint8)
-    new_l = np.empty(N, np.uint8)
-    seen = np.empty(V, np.uint8)
-    parity = np.empty(V, np.uint8)
-    stack = np.empty(V, np.int32)
-    ord_child = np.empty(V, np.int32)
-    ord_par = np.empty(V, np.int32)
-    ord_link = np.empty(V, np.int32)
     nbad = 0
-    for b in range(B):
+    for b in _prange(B):
+        parent = np.empty(V, np.int32)
+        par = np.empty(V, np.uint8)
+        in_cl = np.empty(V, np.uint8)
+        odd_v = np.empty(V, np.uint8)
+        erasure = np.empty(N, np.uint8)
+        new_l = np.empty(N, np.uint8)
+        seen = np.empty(V, np.uint8)
+        parity = np.empty(V, np.uint8)
+        stack = np.empty(V, np.int32)
+        ord_child = np.empty(V, np.int32)
+        ord_par = np.empty(V, np.int32)
+        ord_link = np.empty(V, np.int32)
         any_def = False
         for v in range(V):
             parent[v] = v
@@ -670,7 +703,8 @@ class UnionFindDecoder:
 class MWPMDecoder:
     """Exact MWPM via pymatching with the production decoder-A tie-break
     (weights 1 + tie_eta(N)*arange(N)); byte-identical to the frozen head
-    at all current sizes."""
+    at all current sizes. Single-threaded on purpose: ``decode_batch`` holds
+    the GIL (measured 2026-09-02), so Python threads cannot parallelize it."""
 
     def __init__(self, geometry, check=False):
         import scipy.sparse as sp

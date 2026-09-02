@@ -13,7 +13,10 @@ formulation A (honeycomb_networks.SignedModel) + scripts/ab_equivalence.py.
 
 Implementation: a thin DiscreteOperator wrapper whose get_conn_padded delegates
 to the wrapped operator and multiplies the returned matrix elements by
-sign(sigma)*sign(sigma'). This runs on the host numpy path netket already uses
+sign(sigma)*sign(sigma') -- via ``QECSignHead.sign_pm1_conn(x, xp)``, which
+reuses each sample's decode for its diagonal and hexagon-flip connected rows
+(local parity rule; see model/sign_head.py). Same numbers as the flat
+``sign_pm1`` on x and on every xp row. This runs on the host numpy path netket already uses
 for numba operators (PauliStrings), which is also where pymatching lives -- the
 sampler never sees the head and stays fully on-device. Verified against netket
 3.16.1.post1: MCState.expect on a trivial-sign wrapper reproduces the wrapped
@@ -56,11 +59,10 @@ class SignFramedOperator(nk.operator.DiscreteOperator):
 
     def get_conn_padded(self, x):
         xp, mels = self._op.get_conn_padded(x)
-        x = np.asarray(x)
-        xp_np = np.asarray(xp)
-        s = self._head.sign_pm1(x.reshape(-1, x.shape[-1])).reshape(x.shape[:-1])
-        sp = self._head.sign_pm1(xp_np.reshape(-1, xp_np.shape[-1])) \
-            .reshape(xp_np.shape[:-1])
+        # one call with samples AND connected rows: the head decodes each sample
+        # once and serves its identity / hexagon-flip rows from that decode
+        # (bit-identical to sign_pm1 on x and on every xp row -- harness-proven)
+        s, sp = self._head.sign_pm1_conn(np.asarray(x), np.asarray(xp))
         return xp, mels * s[..., None] * sp
 
     def __repr__(self):

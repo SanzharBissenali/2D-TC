@@ -10,6 +10,19 @@ Built against the public API only:
 
     g = HoneycombGeometry(Lx, Ly); head = QECSignHead(g, decoder=name)
     s = head.s01(states)          # states (B, N) +-1 floats, bit 1 = spin down
+    s, sp = head.sign_pm1_conn(x, xp)   # --api conn: x (B, N) samples, xp (B, C, N)
+
+API (--api, default flat):
+  flat   times head.s01 on the flattened rows (the pre-2026-09-02 production
+         call pattern; per-config = wall / rows).
+  conn   times head.sign_pm1_conn(x_base, xp) on the SAME production-shaped
+         neighbourhoods, xp shaped (n_base, 1+N+F, N) = [identity, N single
+         flips, F hexagon flips] (what SignFramedOperator.get_conn_padded hands
+         the head), reporting us per configuration = wall / (n_base*(2+N+F)) so
+         it is directly comparable with flat. Calls are chunked in base configs:
+         max(1, chunk // (2+N+F)) per call. The warm-up additionally asserts
+         conn == flat on its rows. Under 'uniform', x and xp are i.i.d. random
+         (every row takes the full path -- the shortcut-miss stress case).
 
 Workloads per size (both evaluated in chunks of --chunk rows, netket-style):
   neighborhood  production-shaped: for each of --n_base base configs (random hexagon
@@ -41,7 +54,10 @@ skips that decoder's cells at that size, and makes the script exit 1 at the end.
 
 Thread pinning: OMP/MKL/OPENBLAS/NUMBA_NUM_THREADS (and VECLIB/NUMEXPR) are set to
 --threads (default 1) BEFORE numpy is imported, so timings are single-thread
-reproducible; the values used are recorded in meta.threads_env.
+reproducible by default; --threads T > 1 lets the head's numba prange kernels
+use T threads (pymatching decode stays single-threaded: it holds the GIL). The
+values used are recorded in meta.threads_env, the effective numba count in
+meta.numba_threads_effective, and ``api`` / ``threads`` in meta and every row.
 
 JSON schema (--out; rewritten atomically after every cell => a killed run leaves a
 valid partial file):
@@ -114,6 +130,7 @@ except ImportError:
     import model  # noqa: F401
 from model.honeycomb_geometry import HoneycombGeometry  # noqa: E402
 from model.sign_head import QECSignHead                  # noqa: E402
+from model.decoders import effective_threads             # noqa: E402
 from exact.loops import count_loops                      # noqa: E402
 
 CODE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(model.__file__)))
@@ -275,6 +292,18 @@ def make_workload(kind, rng, n_base, density, P, N):
     raise ValueError(kind)
 
 
+def make_conn_workload(kind, rng, n_base, density, P, N):
+    """(x_bits (n_base, N), xp_bits (n_base, 1+N+F, N)) for the conn API:
+    the same neighbourhood rows as make_workload, base-major, xp[:, 0] = x."""
+    C = 1 + N + P.shape[0]
+    if kind == "neighborhood":
+        xp = make_neighborhood(rng, n_base, density, P, N).reshape(n_base, C, N)
+        return np.ascontiguousarray(xp[:, 0, :]), xp
+    if kind == "uniform":
+        return make_uniform(rng, n_base, N), make_uniform(rng, n_base * C, N).reshape(n_base, C, N)
+    raise ValueError(kind)
+
+
 def syndrome_stats(bits, incT):
     """Mean defect count + zero-syndrome fraction via an exact float32 GEMM mod 2."""
     synd = np.rint(bits.astype(np.float32) @ incT) % 2
@@ -290,6 +319,14 @@ def _check_output(s, n_rows):
     assert s.shape == (n_rows,), f"s01 shape {s.shape} != {(n_rows,)}"
     assert np.isin(s, (0.0, 1.0)).all(), "s01 values not in {0., 1.}"
     return s
+
+
+def _check_conn_output(s, sp, n, C):
+    s, sp = np.asarray(s), np.asarray(sp)
+    assert s.shape == (n,) and sp.shape == (n, C), f"conn shapes {s.shape} {sp.shape}"
+    assert np.isin(s, (-1.0, 1.0)).all() and np.isin(sp, (-1.0, 1.0)).all(), \
+        "sign_pm1_conn values not in {-1., 1.}"
+    return s, sp
 
 
 def run_sanity(head, zero_bits, ref, mwpm_ref):
@@ -311,10 +348,14 @@ def run_sanity(head, zero_bits, ref, mwpm_ref):
 # ----------------------------------------------------------------------------
 def run_cell(head, kind, density, size_info, args, P, incT, seed_tuple):
     N, F = size_info["N"], size_info["F"]
-    rows_per_pass = args.n_base * (1 + N + F)
+    conn = args.api == "conn"
+    C = 1 + N + F                                  # connected rows per sample (conn)
+    per_base = (2 + N + F) if conn else (1 + N + F)   # configurations per base config
+    rows_per_pass = args.n_base * per_base
     rec = {
         "size": size_info["label"], "N": N, "F": F, "V": size_info["V"],
         "decoder": head.decoder_name if hasattr(head, "decoder_name") else None,
+        "api": args.api, "threads": _THREADS,
         "workload": kind, "density": density, "n_base": args.n_base,
         "rows_per_pass": rows_per_pass, "chunk": args.chunk, "chunk_used": None,
         "warmup_rows": None, "warmup_s": None, "repeats": args.repeats,
@@ -334,42 +375,73 @@ def run_cell(head, kind, density, size_info, args, P, incT, seed_tuple):
         with _Alarm(args.hard_cap * budget + 5.0):
             # -- warm-up (separate configs; untimed; triggers numba JIT) ------
             rng_w = np.random.default_rng(seed_tuple + (7919,))
-            Xw = make_workload(kind, rng_w, max(1, args.warmup // (1 + N + F) + 1),
-                               density, P, N)[: args.warmup]
-            Sw = to_states(Xw)
-            t0 = time.perf_counter()
-            _check_output(head.s01(Sw), Sw.shape[0])
-            tw = time.perf_counter() - t0
-            rec["warmup_rows"], rec["warmup_s"] = int(Sw.shape[0]), tw
-            rate = tw / Sw.shape[0]                    # s per row (running estimate)
+            n_bw = max(1, args.warmup // per_base + 1)
+            if conn:
+                Xw, XPw = make_conn_workload(kind, rng_w, n_bw, density, P, N)
+                Sw, SPw = to_states(Xw), to_states(XPw)
+                t0 = time.perf_counter()
+                sw, spw = _check_conn_output(*head.sign_pm1_conn(Sw, SPw), n_bw, C)
+                tw = time.perf_counter() - t0
+                # correctness guard: conn == flat on the warm-up rows
+                assert np.array_equal(sw, head.sign_pm1(Sw)) and np.array_equal(
+                    spw, head.sign_pm1(SPw.reshape(-1, N)).reshape(n_bw, C)), \
+                    "sign_pm1_conn != flat sign_pm1 on the warm-up batch"
+                n_w = n_bw * per_base
+            else:
+                Xw = make_workload(kind, rng_w, n_bw, density, P, N)[: args.warmup]
+                Sw = to_states(Xw)
+                t0 = time.perf_counter()
+                _check_output(head.s01(Sw), Sw.shape[0])
+                tw = time.perf_counter() - t0
+                n_w = int(Sw.shape[0])
+            rec["warmup_rows"], rec["warmup_s"] = int(n_w), tw
+            rate = tw / n_w                            # s per row (running estimate)
 
             chunk = int(args.chunk)
             while chunk > 16 and rate * chunk > budget / 4:
                 chunk //= 2
             rec["chunk_used"] = chunk
+            chunk_base = max(1, chunk // per_base)     # conn: base configs per call
 
             # -- timed passes -----------------------------------------------
             elapsed = 0.0
             rows_total = 0
             for r in range(args.repeats):
                 rng = np.random.default_rng(seed_tuple + (r,))
-                X = make_workload(kind, rng, args.n_base, density, P, N)
-                if r == 0:
-                    rec["mean_defects"], rec["zero_syndrome_frac"] = \
-                        syndrome_stats(X, incT)
-                S = to_states(X)
-                n_rows = S.shape[0]
+                if conn:
+                    X, XP = make_conn_workload(kind, rng, args.n_base, density, P, N)
+                    if r == 0:
+                        rec["mean_defects"], rec["zero_syndrome_frac"] = \
+                            syndrome_stats(XP.reshape(-1, N), incT)
+                    S, SP = to_states(X), to_states(XP)
+                    n_rows = args.n_base
+                    step = chunk_base
+                else:
+                    X = make_workload(kind, rng, args.n_base, density, P, N)
+                    if r == 0:
+                        rec["mean_defects"], rec["zero_syndrome_frac"] = \
+                            syndrome_stats(X, incT)
+                    S = to_states(X)
+                    n_rows = S.shape[0]
+                    step = chunk
                 t_pass, rows_pass = 0.0, 0
-                for start in range(0, n_rows, chunk):
-                    n = min(chunk, n_rows - start)
+                for start in range(0, n_rows, step):
+                    nb_ = min(step, n_rows - start)               # bases (conn) / rows (flat)
+                    n = nb_ * per_base if conn else nb_           # configurations counted
                     first = rows_total + rows_pass == 0
                     if not first and elapsed + t_pass + rate * n > budget:
                         rec["truncated"] = True
                         break
-                    t0 = time.perf_counter()
-                    s = head.s01(S[start:start + n])
-                    dt = time.perf_counter() - t0
-                    _check_output(s, n)
+                    if conn:
+                        t0 = time.perf_counter()
+                        s, sp = head.sign_pm1_conn(S[start:start + nb_], SP[start:start + nb_])
+                        dt = time.perf_counter() - t0
+                        _check_conn_output(s, sp, nb_, C)
+                    else:
+                        t0 = time.perf_counter()
+                        s = head.s01(S[start:start + n])
+                        dt = time.perf_counter() - t0
+                        _check_output(s, n)
                     t_pass += dt
                     rows_pass += n
                     rec["n_chunks_timed"] += 1
@@ -381,7 +453,7 @@ def run_cell(head, kind, density, size_info, args, P, incT, seed_tuple):
                 rows_total += rows_pass
                 if rec["truncated"]:
                     break
-                if r + 1 < args.repeats and elapsed + rate * n_rows > budget:
+                if r + 1 < args.repeats and elapsed + rate * rows_per_pass > budget:
                     break                              # no room for another full pass
             rec["timed_s"], rec["n_configs_timed"] = elapsed, int(rows_total)
     except CellTimeout as e:
@@ -418,7 +490,7 @@ def _row(rec):
     wl = "uniform" if rec["density"] is None else f"nbhd p={rec['density']:<6g}"
     flags = ("T" if rec["truncated"] else "") + ("H" if rec["hard_timeout"] else "")
     err = f"  ERR {rec['error']}" if rec["error"] else ""
-    return (f"{rec['size']:>6} N={rec['N']:<4d}{rec['decoder']:<10}"
+    return (f"{rec['size']:>6} N={rec['N']:<4d}{rec['decoder']:<10}{rec.get('api', 'flat'):<5}"
             f"{wl:<15}rows={rec['n_configs_timed']:<7d}x{rec['repeats_done']} "
             f"{_fmt(rec['us_per_config_median'], 10)} us/cfg "
             f"(min {_fmt(rec['us_per_config_min'], 9)}) "
@@ -462,7 +534,11 @@ def main():
     ap.add_argument("--chunk", type=int, default=4096)
     ap.add_argument("--warmup", type=int, default=64, help="untimed warm-up rows")
     ap.add_argument("--threads", type=int, default=1,
-                    help="BLAS/numba thread count pinned before numpy import")
+                    help="BLAS/numba thread count pinned before numpy import "
+                         "(numba prange kernels of the head use it; MWPM decode is 1-thread)")
+    ap.add_argument("--api", choices=("flat", "conn"), default="flat",
+                    help="flat: head.s01 on flattened rows; conn: head.sign_pm1_conn(x, xp) "
+                         "on (n_base, 1+N+F, N) neighbourhoods, us/config over n_base*(2+N+F)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default=socket.gethostname())
     ap.add_argument("--git_hash", default=None,
@@ -493,6 +569,8 @@ def main():
             "hostname": socket.gethostname(), "platform": platform.platform(),
             "cpu": _cpu_model(), **_versions(),
             "threads_env": {k: os.environ.get(k) for k in _THREAD_VARS},
+            "threads": _THREADS, "numba_threads_effective": effective_threads(),
+            "api": args.api,
             "code_path": CODE_PATH, "git_hash": git_hash, "git_dirty": git_dirty,
             "args": vars(args), "step_formula": STEP_FORMULA, "total_wall_s": None,
         },
@@ -501,7 +579,8 @@ def main():
     print(f"# bench_decoders  tag={args.tag}  code={CODE_PATH}  git={git_hash}"
           f"{' DIRTY:' + ','.join(git_dirty) if git_dirty else ''}", flush=True)
     print(f"# cpu={out['meta']['cpu'].get('model_name', out['meta']['cpu']['processor'])}"
-          f"  threads={_THREADS}  numpy={np.__version__}"
+          f"  threads={_THREADS} (numba effective {out['meta']['numba_threads_effective']})"
+          f"  api={args.api}  numpy={np.__version__}"
           f"  pymatching={out['meta']['pymatching']}  numba={out['meta']['numba']}",
           flush=True)
     print(f"# sizes={args.sizes}  decoders={','.join(decoders)}  densities={densities}"
@@ -516,7 +595,7 @@ def main():
         N, F, V = int(g.N), int(g.n_plaqs), int(g.n_vertices)
         P, incT = _plaq_incidence(g), _vertex_incidence_T(g)
         size_info = {"label": label, "Lx": Lx, "Ly": Ly, "N": N, "F": F, "V": V,
-                     "rows_per_pass": args.n_base * (1 + N + F)}
+                     "rows_per_pass": args.n_base * ((2 if args.api == "conn" else 1) + N + F)}
         out["sizes"][label] = {k: v for k, v in size_info.items() if k != "label"}
         print(f"\n== {label}: N={N} F={F} V={V}  rows/pass={size_info['rows_per_pass']}"
               f"  step factor (2+N+F)={2 + N + F}", flush=True)

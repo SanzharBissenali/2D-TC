@@ -4,17 +4,24 @@
 # (mwpm, anchor, greedy, unionfind, tie_sum) -- scripts/bench_decoders.py.
 # CPU-only work (the head is host numpy/pymatching/numba), but the allocation is
 # GPU-only so -G 1 is mandatory; shared queue needs exactly -c 32 per GPU and NO
-# --mem. The script pins BLAS/numba to 1 thread itself (reproducible timings).
+# --mem. The script sets the BLAS/numba thread env vars to --threads itself
+# (THREADS=1 is the reproducible single-thread mode; THREADS>1 lets the head's
+# numba prange kernels use the cores -- nothing is pinned to 1 then).
 #
 # Env ('+' separates list items: cluster.sh submit flattens ssh args, so ',' inside
 # --export values is unsafe; converted to ',' below):
 #   SIZES      (1x2+2x2+2x3+3x3+4x4+5x5+6x6+8x8+10x10+12x12)
 #   DECODERS   (mwpm+anchor+greedy+unionfind+tie_sum)
 #   DENSITIES  (0.005+0.02+0.08)     link-flip densities, neighborhood workload
+#   THREADS    (32)   numba/BLAS thread count(s), '+'-list => one run per value
+#   API        (conn) flat | conn, '+'-list => one run per value
+#                     (conn = head.sign_pm1_conn on (n_base,1+N+F,N) neighbourhoods,
+#                      us/config over n_base*(2+N+F); flat = head.s01 on flat rows)
 #   BUDGET     (120)  timed seconds per (size, decoder, workload, density) cell
 #   CONSTRUCT_BUDGET (=BUDGET) hard cap on head construction per (size, decoder)
 #   N_BASE (64)  REPEATS (3)  CHUNK (4096)  SEED (0)  HARD_CAP (1.5)
-#   TAG        (perlmutter)  -> results/diagnostics/bench_decoders_${TAG}.json
+#   TAG        (perlmutter)  -> results/diagnostics/bench_decoders_${TAG}_${api}_t${threads}.json
+#                             (one file per (API, THREADS) combination)
 #   EXTRA      extra CLI flags passed verbatim (e.g. --no_uniform)
 #
 # Wall budget: 240 cells at the defaults; fast decoders finish each cell in
@@ -24,7 +31,7 @@
 #
 # Submit:
 #   bash scripts/cluster.sh submit jobs/nersc_bench_decoders.sh \
-#       --export=ALL,TAG=perlmutter,BUDGET=120
+#       --export=ALL,TAG=perlmutter,BUDGET=120,THREADS=1+32,API=flat+conn
 #SBATCH -A m5340_g
 #SBATCH -C gpu
 #SBATCH -q shared
@@ -49,6 +56,8 @@ N_BASE="${N_BASE:-64}"; REPEATS="${REPEATS:-3}"; CHUNK="${CHUNK:-4096}"
 SEED="${SEED:-0}"; HARD_CAP="${HARD_CAP:-1.5}"
 TAG="${TAG:-perlmutter}"
 EXTRA="${EXTRA:-}"
+THREADS="${THREADS:-32}"; THREADS="${THREADS//+/,}"
+API="${API:-conn}"; API="${API//+/,}"
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }
@@ -61,14 +70,23 @@ echo "git: $(git -C "$REPO" rev-parse --short HEAD) $(git -C "$REPO" status --po
 
 OUT=$REPO/results/diagnostics
 mkdir -p "$OUT" "$REPO/logs"
-echo "=== bench_decoders tag=$TAG sizes=[$SIZES] decoders=[$DECODERS] densities=[$DENSITIES]" \
-     "budget=${BUDGET}s construct=${CONSTRUCT_BUDGET}s n_base=$N_BASE repeats=$REPEATS chunk=$CHUNK ==="
-# shellcheck disable=SC2086
-PYTHONPATH=$REPO python "$REPO/scripts/bench_decoders.py" \
-    --sizes "$SIZES" --decoders "$DECODERS" --densities "$DENSITIES" \
-    --budget "$BUDGET" --construct_budget "$CONSTRUCT_BUDGET" --hard_cap "$HARD_CAP" \
-    --n_base "$N_BASE" --repeats "$REPEATS" --chunk "$CHUNK" --seed "$SEED" \
-    --tag "$TAG" --out "$OUT/bench_decoders_${TAG}.json" $EXTRA
-rc=$?
-echo "=== bench_decoders done (exit $rc) $(date -u +%FT%TZ) ==="
-exit $rc
+rc_all=0
+for api in ${API//,/ }; do
+  for thr in ${THREADS//,/ }; do
+    echo "=== bench_decoders tag=$TAG api=$api threads=$thr sizes=[$SIZES] decoders=[$DECODERS]" \
+         "densities=[$DENSITIES] budget=${BUDGET}s construct=${CONSTRUCT_BUDGET}s" \
+         "n_base=$N_BASE repeats=$REPEATS chunk=$CHUNK ==="
+    # --threads sets OMP/MKL/OPENBLAS/NUMBA_NUM_THREADS inside the script (before numpy)
+    # shellcheck disable=SC2086
+    PYTHONPATH=$REPO python "$REPO/scripts/bench_decoders.py" \
+        --sizes "$SIZES" --decoders "$DECODERS" --densities "$DENSITIES" \
+        --budget "$BUDGET" --construct_budget "$CONSTRUCT_BUDGET" --hard_cap "$HARD_CAP" \
+        --n_base "$N_BASE" --repeats "$REPEATS" --chunk "$CHUNK" --seed "$SEED" \
+        --threads "$thr" --api "$api" \
+        --tag "${TAG}_${api}_t${thr}" --out "$OUT/bench_decoders_${TAG}_${api}_t${thr}.json" $EXTRA
+    rc=$?
+    echo "=== bench_decoders api=$api threads=$thr done (exit $rc) $(date -u +%FT%TZ) ==="
+    [ $rc -ne 0 ] && rc_all=$rc
+  done
+done
+exit $rc_all
