@@ -875,6 +875,56 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   and the F_s operational meaning (|ψ|²-weighted sign agreement = max
   fidelity of ANY positive net × head — tiny-amplitude sign errors cost
   their weight squared, which is why the tie channel is cheap).
+- **Phase 4d — hy field (complex H), 45 runs COMPLETE (2026-09-02, jobs
+  57809*/57813676/57824562, W&B hc-phase4d-hy).** Added -hy·Σσʸ to the
+  honeycomb builder + direct ED (complex Hermitian; merged single-flip channel;
+  config forces complex trunk when hy≠0; sign head/framing dtype-agnostic).
+  All 5 decoder arms run cnnqC (complex trunk on H̃=SHS) over the 2×3
+  {0,0.4,0.8}² grid at hy=0.4. RESULT: (1) the **±1-head ceiling COLLAPSES**
+  — all five decoders' phase-optimized real-signed ceilings equal to 3 digits
+  (even anchor within 3%; F_plus 0.64-0.83), because with hy on the state is
+  genuinely COMPLEX and the ceiling is phase-limited not sign-limited ⇒
+  decoder choice is irrelevant at hy≠0, confirmed in vivo (achieved rel-err
+  2e-4..7e-3, all arms indistinguishable). (2) the **complex trunk sails ~2
+  orders below that ±1-head ceiling** — the head is the discrete sign prior,
+  the trunk carries the phases. Review-agent caught+fixed a σʸ conjugation bug
+  (built conj(H) — invisible to E0/ceilings by Hermiticity, would sign-flip
+  ⟨σʸ⟩; commit bc94ff3) + 6 minors. Gate-0 generalized ceiling = phase-optimized
+  real-signed fidelity via exact angular binning (sign_fidelity.py run_point_complex,
+  --hy). Notebook analysis/05 Phase-4d cells.
+- **EXACT TRAINED-STATE FIDELITIES — the notebook's metric upgraded from
+  energy rel-err to literal overlap F = |⟨ψ_ED|ψ_NQS⟩|² (2026-09-02, user ask
+  "redo the plots with actual trained fidelities").** scripts/nqs_fidelity.py
+  + jobs/nersc_fidelity.sh: rebuild each net from its checkpoint (READ
+  rescale/channels/kernel from the run's sim_params — factory rescale default
+  10**1.5 ≠ trained 1.0, a silent function change caught by the built-in
+  ⟨H⟩-vs-logged-energy self-check), enumerate all 2^N configs through it on GPU,
+  apply the head sign (operator arms) or use the model's own sign (residual),
+  exact overlap. Also emits F_trunk (head sign stripped) = head-contribution
+  probe. 167 records across 4b(2×2 75)/4c(2×3)/4d(2×3 hy)/3-tier, EVERY ONE
+  energy-self-check-verified. Headline numbers: 3-tier at 2×3 h=0 —
+  plaincnn F=2.2e-6, positive Combo F=0.664 (sign-free ceiling max(W+,W-)=0.75,
+  the global flip is free in the modulus), Combo+QEC-head F=0.99998. 4b plane
+  1e-5..1e-2 (B/C/R near-identical); 4c hy=0 anchor SATURATES its ceiling
+  (1-F=0.20 vs ceiling 0.193) while mwpm/greedy/uf/ts ~equal; 4d hy=0.4
+  1-F=1e-3..5e-2 with F_trunk collapsing to ~0.25 (proof the complex trunk
+  learned phases ON TOP of the head signs). Notebook fidelity section + figures/.
+- **3D fTC peer handoff DELIVERED (2026-09-02, session toric-code-nqs-91).**
+  Full architecture + results + the loop_count-in-3D port question sent; user
+  MANDATED the peer investigate whether a 3D closed-form analogue exists rather
+  than inherit my "recursion only" conjecture. Peer's swarm FOUND ONE: at odd L
+  the 3D fermionic sign IS the mod-2 self-linking number of flux loops with
+  body-diagonal framing (4000/4000 at L=3 PBC); even L needs a quadratic
+  (Arf/spin-structure) correction — matching their pre-existing GF(2)-quadratic
+  form q(t). Our contributed framing: the sign is a quadratic refinement of the
+  Z₂ (self-)intersection/linking form; canonical (→ local counting) on
+  simply-connected geometry, Arf-classified on nontrivial topology / even L
+  (our OBC study never saw it by construction — theirs measured). Peer running
+  the 2D playbook (gate-0 ceilings → framed head → tier ladder → MWPM+greedy →
+  exact fidelities) against 3D ED. Their syndrome = a (1,1,1) diagonal LINE per
+  flip (intrinsic L-fold tie) ⇒ their tie channel is FIRST-ORDER fat (unlike
+  our hx^{2wmin} suppression), so decoder choice may matter at leading order
+  there — flagged for their gate 0.
 - Known trap (pre-existing): invoking main.py with ≤12 argv entries hits the legacy
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
