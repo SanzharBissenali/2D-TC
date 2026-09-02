@@ -1048,7 +1048,9 @@ Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `clu
   2.0/2.8, 81/112; N=479: 7.2/37, 9.7/50, 5.6/28, 6.2/32, tie_sum 19–94/95–480 (non-monotonic:
   past its defect cap it silently falls back to mwpm). Speed-ups vs as-shipped at 4×4: greedy ~12×,
   UF ~17×, anchor ~3×, mwpm ~1.3×. In vivo (A100 + host head): 4×4 head 0.5–0.8 s of ~21 s/step
-  (fast four) ⇒ head ≈ 3–4% of a step, GPU dominates; tie_sum 4×4 in vivo 76 s/step head ⇒ infeasible.
+  (fast four) ⇒ head ≈ 3–4% of a step, GPU dominates. tie_sum 4×4 in vivo: 76–78 s/step head during the
+  first ~40 steps (far-from-GS samples carry many defects ⇒ class enumeration), falling to ~1 s/step on the
+  plateau — it reached 293/350 steps in 2:15, so it is slow-to-start rather than infeasible at this size.
   Head runs serially inside get_conn_padded (GPU idle meanwhile); untouched levers: numba prange over
   rows (~20–30× on 32 cores) and decode reuse for the F hexagon-flip neighbours (local parity rule).
 - **Accuracy — exact ceilings 1−F_s vs N (new gradings 1×1,1×3,1×4 + existing 1×2,2×2,2×3; 1×5
@@ -1071,7 +1073,14 @@ Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `clu
   order-of-magnitude for the fast decoders, exact for the bad one.
 - **Ops:** 12/13 overnight jobs ran; 3 timeouts (1×5 ceilings in the 2 h ladder job → resubmitted
   alone -t 2:30; 3×3 anchor/greedy at 1:00/1:30 → rerun 1:30). 4×4 arms take ~21 s/step ⇒ 350 steps
-  need ~2.1 h: the -t 1:45 jobs cut at ~280–305 steps (converged, V ~6e-3; rerun at -t 3:00 if exact
-  350-step parity matters). Rate-limit gap 02:20–13:30 killed two agents mid-verification; their work
+  need ~2.1 h: the -t 1:45 jobs cut at 293–311 steps (converged, V ~6e-3; rerun at -t 3:00 if exact
+  350-step parity matters). **4×4 result (relative to the best arm = greedy):** anchor 8.7e-3, UF 2.3e-4,
+  mwpm 1.8e-4, tie_sum 2.2e-4 — same ordering and same 30–50× anchor gap as at every ED size; 3×3 (350
+  steps, best = greedy): anchor 5.4e-3, UF 2.0e-4, mwpm 1.2e-4, tie_sum 2.6e-4. **1×5 ceilings:** the
+  2:30 job timed out during point 9/9 and sign_fidelity wrote only at the end ⇒ 8 rows reconstructed from
+  the log into `signfid_hc1x5_ds_grid_dl.json` (labelled `source`); sign_fidelity now writes atomically
+  after EVERY point. Proxy at (0.4,0), D(dec,mwpm): anchor 6e-3 (N=11) → 1.5e-2 (N=38), UF ~1e-4 →
+  2.7e-4, greedy ≤6e-5, tie_sum ≤3e-5. Gotcha: `cluster.sh fetch` can land on a login node whose git
+  identity is unset (login24: 'unable to auto-detect email address') — just retry (another node). Rate-limit gap 02:20–13:30 killed two agents mid-verification; their work
   was reviewed, re-verified (harness + smoke) and committed by hand. NEVER `cluster.sh sync` while
   jobs are pending — pending jobs read main.py at start. Background `sleep` polls > ~30 min get killed.
