@@ -12,7 +12,7 @@
 # core count); THREADS=1 reproduces the serial head.
 #
 # Env: SIZES ('+'-sep, default 1x2+2x2+2x3), ARMS ('+'-sep from cnn,mwpm,anchor,greedy,
-#      unionfind,tie_sum; default all six), POINTS (default 0.4:0), SIM_TIME (1.0),
+#      unionfind,tie_sum; default all six), POINTS (default 0.8:0.4 -- stresses the head: more defects per sample than the accuracy point (0.4,0)), SIM_TIME (1.0),
 #      SEED (0), THREADS (32), WANDB (1), WANDB_GROUP (hc-timing).
 # Submit: ... submit jobs/nersc_timing_ladder.sh -t 1:00:00 --export=ALL,SIZES=3x3,ARMS=cnn+mwpm
 #SBATCH -A m5340_g
@@ -35,7 +35,7 @@ mkdir -p "$OUTDIR"
 
 SIZES="${SIZES:-1x2+2x2+2x3}"; SIZES="${SIZES//+/ }"
 ARMS="${ARMS:-cnn+mwpm+anchor+greedy+unionfind+tie_sum}"; ARMS="${ARMS//+/ }"
-POINTS="${POINTS:-0.4:0}"; POINTS="${POINTS//+/ }"
+POINTS="${POINTS:-0.8:0.4}"; POINTS="${POINTS//+/ }"
 SIM_TIME="${SIM_TIME:-1.0}"
 SEED="${SEED:-0}"
 export NUMBA_NUM_THREADS="${THREADS:-32}"
