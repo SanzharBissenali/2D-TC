@@ -237,3 +237,94 @@ They're now running the 2D playbook — gate-0 ceilings, framed head, the tier l
 ## Where this leaves the doubled semion
 
 Closed. The sign problem is solved on the sign-free cuts (exact) and along the whole real-field plane (TC-grade); the y-field cut is handled by letting the trunk carry the phases while the head carries the signs; every claim is now backed by exact fidelities, not just energies; and the construction has propagated to its intended destination, where it immediately did better than the person who handed it over expected. The interesting frontier is entirely in 3D now.
+
+---
+
+# Five decoders vs system size: how fast can a sign head run, and does it ever become the bottleneck?
+
+*2026-09-02, branch `doubled-semion`*
+
+This entry records an overnight-and-a-day campaign on the decoder ladder — the five deterministic
+recovery rules behind the QEC sign head (anchor, union-find, greedy, MWPM, tie-sum) — asked two
+questions at once: how does each one's cost scale with the number of qubits, and how does each one's
+accuracy scale, when the network on top of it is held fixed. Everything below lives in
+`analysis/06_decoder_scaling.ipynb`; this is the narrative and the discussion that followed.
+
+## What was actually measured
+
+**Speed.** The shipped decoders were Python loops with a 2^F parity table that could not even be
+constructed past ~20 hexagons. We landed compiled versions (numba greedy and union-find, a float32-GEMM
+anchor, an O(N) loop-parity counter, a size-aware tie-break slope), bit-identical to the graded Phase-4c
+functions on 835 regression checks from 1×2 to 12×12, and benchmarked them on Perlmutter's EPYC 7763,
+single thread, on production-shaped batches — base configurations plus every one of their 1+N+F connected
+configurations, which is exactly what the framed Hamiltonian hands the head each step. Per configuration,
+the four fast decoders run 0.2–0.6 µs at N=27 and 5.6–9.7 µs at N=479, within a factor of two of each
+other at every size; greedy is fastest, MWPM within ~30% of it with no approximation. Tie-sum is 25–100×
+slower and its cost is non-monotonic in defect density, because past its defect cap it silently becomes
+MWPM. In vivo, every production run now logs the head's wall-clock per step: at 4×4 (63 qubits) the fast
+decoders spend 0.5–0.8 s of a ~21 s step on the head — three to four percent. Tie-sum showed a transient
+nobody predicted: ~100 s per step around step 20, when the far-from-ground-state samples carry many
+defects and the minimal classes are large, collapsing to ~1 s once the state converges.
+
+**Accuracy.** Exact ceilings 1−F_s now exist at seven sizes (N = 6 … 27). At (0.4, 0): MWPM and tie-sum
+flat near 1e-6, greedy near 3e-6, union-find 1–5e-5, anchor 6e-3 … 1.5e-2 and growing with the patch — the
+GF(2)-linear channel doing exactly what the theorem says. In vivo, at every size from N=11 to N=63, anchor
+lands at 30–70% of its ceiling and is 30–50× worse than the rest; the other four are indistinguishable
+within single-seed noise, with achieved errors rising from 1e-4 to 4e-4 across the ED sizes while their
+ceilings stay two to three orders below. Budget-limited, not decoder-limited, at every N we can reach —
+the Phase-4c verdict, now with a size axis. A sampled disagreement-vs-MWPM proxy, validated against exact
+grading at four sizes, extends the ceiling picture past ED: it reproduces anchor's ceiling to a few percent
+and bounds the good decoders from above by 3–10×.
+
+**Benchmark beyond ED.** The literature search closed a door we had left ajar: no published method
+benchmarks the doubled semion with a σˣ field at any size. Both sign-free QMC constructions require frozen
+flux, and σˣ is precisely the operator that hops it. The trusted large-N reference is a strip DMRG we build
+ourselves; until then the best variational arm is the reference, which is honest but blind to a shared
+head bias.
+
+## The discussion: what the two speed panels mean, and why they are sequential
+
+A question that sharpened the whole picture: *what is the difference between the per-configuration and
+the per-step panel, and is the GPU in either?* Neither panel contains GPU time. Panel (a) is the measured
+CPU cost of one head evaluation per row. Panel (b) is that number multiplied by 8192·(2+N+F), the rows a
+step actually sends through the head — 8192 samples and, for each, its 1+N+F connected configurations,
+evaluated on both σ and σ′. The only measured per-step numbers are the hollow in-vivo markers, and they
+land on the derived curves, which is the check that the accounting is right. The total step time is a
+third quantity — GPU sampling and network forwards plus the head's serial CPU time — that the runs now log
+as `step_wall`.
+
+*Are the two branches sequential?* Yes, today. The head runs on the host inside `get_conn_padded`; the GPU
+idles while it does, then the network forwards run. But the branches are data-independent: given the
+batch and its connected configurations, the sign of σ′ does not depend on the amplitude A_θ(σ′) or vice
+versa; they meet only in the local energy E_loc(σ) = Σ_σ′ H_σσ′ s(σ)s(σ′) A(σ′)/A(σ). So they *can* be
+overlapped — dispatch the forwards asynchronously, compute signs on the CPU meanwhile, join at the
+multiply — saving min(t_head, t_GPU) per step. That is bounded by the head's share, three to four percent
+at 4×4, so it only matters where head and GPU become comparable, roughly N ≳ 300 in the benchmark.
+
+*Can the head use the idle cores during training?* It can, and this is the biggest lever by far. Every
+row of the batch is independent, and the shared-queue job already owns 32 cores that sit idle during the
+head. The options, ranked by gain per effort:
+
+1. **Row-parallel head** — `prange` in the numba kernels, pymatching's batch decode split over a thread
+   pool with one `Matching` object per thread. Expected 20–30× on 32 cores: 37 s → ~1.5 s per step for
+   MWPM at N=479. Rows do not interact, so bit-identity is untouched.
+2. **Shard the samples across ranks** (netket MPI/sharding) — each rank's connected-configuration pass
+   handles only its own samples, so head and GPU split together; ~4× per 4-GPU node, stacks with (1).
+3. **Reuse the sample's decode for its F hexagon-flip neighbours** — same syndrome, same correction, and
+   the loop parity follows from the verified local 12-link rule; ~25% of rows at 12×12 become nearly free.
+4. **Overlap with the GPU** — the min(t_head, t_GPU) saving above; only relevant before (1) is done.
+5. **Cheaper decoder** — greedy is ~25% faster at equal in-vivo accuracy; a free choice, not an optimization.
+
+Not worth pursuing: memo caches (production syndromes are provably unique at scale; deduplication costs
+more than decoding) and a GPU port of the head (MWPM stays on the CPU regardless, and a parallel loop
+counter is heavy engineering for a cost that (1) already removes).
+
+## What we are testing next
+
+The question the user actually wants answered is operational: *does leaving the QEC head on the CPU cost
+essentially nothing?* The data so far say yes at every size run (3–4% at 63 qubits) and the benchmark says
+the single-threaded head would catch up with the GPU only around a few hundred qubits. The plan is to
+implement (1) and (3), re-run the per-step measurement, and see whether the CPU-resident head stays a
+rounding error out to the 12×12 frontier. If it does, the architectural split — positive network on the
+device, deterministic sign on the host — costs nothing in wall-clock, which is the cleanest possible
+argument for keeping it that way in 3D.
