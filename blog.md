@@ -77,3 +77,163 @@ Practically, this pushes toward not needing a complex-valued network or a sign h
 - The architecture comparison delivered a clean, unambiguous result: exact symmetry embedding matters even when there's no sign problem to hide behind.
 - The perturbed (`hx`) cut opened a real physics question that neither of two independent research efforts can currently answer, and that's worth sitting with rather than rushing past.
 - Next: one small ED point at L=4 to decide whether the field sweep needs a complex ansatz at all — and then the sweep itself.
+
+---
+
+# The decoder ladder: five ways to guess a sign, and how to eliminate four of them
+
+*2026-08-31, branch `doubled-semion`*
+
+This entry covers the Phase-4c campaign on the doubled semion — the question a mentor
+would ask first about our QEC sign head: *you chose minimum-weight matching; how much of
+the result is that choice?* We answered it by building a ladder of five decoders, grading
+every one against exact diagonalization, training all five inside the NQS at the biggest
+ED-reachable size, and benchmarking their scaling to ~500 spins and mock 3D lattices.
+
+## Five ways to compute a sign
+
+Every decoder in the ladder shares one skeleton: read the vertex syndrome of the sampled
+configuration σ (the set of Q_v = −1 "defects"), construct a recovery string ε that pairs
+the defects up, and output sign(σ) = (−1)^{#loops(ε·σ)} — the loop parity of the repaired,
+defect-free configuration. They differ only in how ε is chosen:
+
+1. **anchor** — drag every defect along a canonical shortest path to one fixed central
+   vertex. No optimization at all; the "move all anyons to a common location" idea.
+2. **greedy** — repeatedly match the two closest unmatched defects and connect them by a
+   canonical shortest path. Locally optimal, not globally minimal.
+3. **union-find** (Delfosse–Nickerson) — grow clusters synchronously around defects until
+   every cluster holds an even number, then peel a spanning tree of the grown region to
+   extract a valid, near-minimal correction.
+4. **MWPM** (production) — the exact minimum-weight perfect matching (pymatching sparse
+   blossom, deterministic tie-break). Minimal weight = the leading-order perturbation-theory
+   process, so its only sign errors are tie-degenerate configurations.
+5. **tie-sum** — don't commit to one ε at all: enumerate the entire degenerate minimal
+   class and take the sign of the coherent sum Σ (−1)^{#loops(εᵢ·σ)}, falling back to the
+   MWPM sign when the sum cancels exactly or the class exceeds its deterministic caps.
+
+A footnote that came up in discussion: one could equivalently define the sign through the
+sequence of hexagon flips converting ε·σ back to the all-up string. On a simply-connected
+patch that decomposition is unique and the two definitions provably coincide (any flip
+ordering telescopes to the same parity), so the extra step changes nothing about the sign
+— but the *recursive* form is where the scalability lives (a flip's parity increment is a
+local function of 12 links, verified) and it is the only form that ports to 3D, where no
+closed-form loop count exists. Direct count and flip recursion: same number, two
+algorithms, one of which survives the dimension jump.
+
+## What 1 − F_s actually measures
+
+The grading metric confused us for a moment, so here is the precise statement. F_s is the
+**|ψ|²-weighted** sign agreement: a configuration with amplitude −0.001 whose sign the
+decoder gets wrong contributes only 10⁻⁶ to 1 − F_s. That weighting is not merely
+sensible, it is *operational*: F_s equals the maximum fidelity that ANY positive amplitude
+network combined with that sign head can reach, because the optimal amplitude simply
+zeroes out every mis-signed configuration and loses exactly their weight. So 1 − F_s is a
+training-independent ceiling, and the head's whole trick is visible in it: MWPM is "wrong"
+on many configurations by count, but nearly perfect by weight, because its only errors sit
+on interference-suppressed amplitudes.
+
+## The results, in three layers
+
+**Exact ceilings** (full 2^N grading at 2×2 and 2×3, nine field points): the ladder orders
+anchor ≪ union-find < greedy < MWPM ≈ tie-sum at every field point, spanning 2–4 orders of
+magnitude; the hz axis is exact for all five (empty syndrome ⇒ empty recovery — the sector
+theorem doesn't care which decoder you use). The size comparison separates the two error
+mechanisms cleanly: anchor's error **grows** with system size (the extensive ~F·hx²
+channel — and a swarm agent upgraded this to a theorem: any GF(2)-*linear* decoder must
+mis-decode at least F single-flip channels, so no anchor variant can be rescued), while
+MWPM's is size-independent (the tie channel).
+
+**In vivo** (45 NQS runs at 2×3, five arms × nine points, identical everything else): the
+ceiling map predicts the network. Anchor is the only arm whose ceiling bites — achieved
+errors land at 14–68% of its 1 − F_s, 10–30× everyone else. The other four are
+statistically indistinguishable, all sitting 1–2 orders *above* their tiny ceilings:
+optimization-limited, not decoder-limited, at a fixed 350-step budget.
+
+**Scaling** (five benchmark agents, to 12×12 = 479 spins and mock 3D lattices): there is
+no speed–accuracy trade-off to navigate. MWPM is simultaneously the most accurate and,
+as C++ sparse blossom, essentially the fastest (0.6–2.9 µs/decode in the physical regime);
+memo caches are provably pointless at scale (production flip-neighborhoods have 100%
+unique syndromes, and deduplication costs more than decoding); and the 3D port is
+verified-trivial, with one documented trap (our tie-break perturbation falls below
+pymatching's weight quantization at 3D sizes — use an explicit tie-break there).
+
+## The elimination bracket
+
+- **anchor** — out on accuracy (and provably unrescuable within the linear class). Retired
+  to negative control, where it did its job perfectly: it is the falsification test that
+  proves the ceiling formalism is what controls the network.
+- **tie-sum** — out on cost-without-benefit. Its enumeration is exponential in defect
+  *separation* (~1.36^r in 2D, ~2.66^r in 3D), and before that exponential even bites, its
+  caps make it silently degrade: past d_max it *is* MWPM with extra steps, and a truncated
+  class returns the sign of a sliver of a coherent sum — deterministic noise. Measured
+  accuracy ≈ MWPM (the dominant tied classes cancel exactly — which refuted our own
+  pre-registered prediction that the coherent sum would remove the tie channel), at
+  25–285× the cost. The idea survives only in weighted form: the physics swarm showed the
+  true tied signs are decided by *unequal resolvent weights* of the minimal recoveries,
+  and a Stace–Barrett effective-weight MWPM is the version that ports to 3D.
+- **union-find** — out in 2D because greedy dominates it on both axes at every physical
+  operating point. Kept on retainer as a compiled 3D fallback.
+- **greedy vs MWPM** — MWPM wins the final: exactly minimal (2–3× better ceiling), already
+  fast with zero engineering, cache-free-correct, 3D-trivial. Greedy is the understudy.
+
+Two of our own pre-registered predictions were refuted along the way (tie-sum ≈ exact; the
+tie exponent being a universal hx^10 — it is 2·w_min of the cheapest tied syndrome, hx^6
+at 1×2), which is the pre-registration system working as intended.
+
+## Where this leaves things
+
+The production choice — MWPM — is now a measured conclusion rather than a default: the
+decoder ladder shows accuracy beyond it buys nothing a 350-step budget can see, speed
+cannot beat it, and its 3D port is the cheapest of the five. The open research direction
+it sharpened is precisely the 3D one: tie degeneracy explodes with dimension, so the
+resolvent-weighted matching (not deeper enumeration) is the upgrade to build when the
+fermionic-code port needs it. Full data: `docs/decoder_scaling.md`, the Phase-4c sections
+of `analysis/05_phase4b_plane.ipynb`, and `results/diagnostics/signfid_hc*_dl.json`.
+
+---
+
+# Turning on the last field, and switching to the metric that can't lie
+
+*2026-09-02, branch `doubled-semion`*
+
+Two things closed out the doubled-semion study: a y-field cut that changes what the sign head is even *for*, and a switch from energy error to exact wavefunction fidelity as the metric behind every plot. A third thing happened alongside — the 3D fermionic-code sibling project found the closed-form our 2D result had been quietly predicting.
+
+## The y-field: from a sign problem to a phase problem
+
+Everything up to here lived on the sign-free cuts — the ground state was real, and the whole game was getting the ±1 signs right. Turn on a σʸ field and the Hamiltonian becomes complex Hermitian: the ground state now carries genuine phases e^{iφ}, not just signs. We ran the full five-decoder ladder at h_y = 0.4 across the (h_x, h_z) grid, complex trunk on the sign-framed operator, all benchmarked against exact diagonalization at 2×3 (27 qubits).
+
+The result reframes the whole head. Two things collapse at once:
+
+- **Every decoder becomes equivalent.** At h_y = 0 the decoder ladder spanned four orders of magnitude (anchor terrible, MWPM exact-on-sector). At h_y = 0.4 all five decoders' ceilings sit within a few percent of each other — even the deliberately-broken anchor is within 3% of MWPM. The reason is clean: with a complex state, the ceiling on a ±1-sign ansatz is set by *how complex the state is*, not by how good the recovery is. It's a phase limit, not a sign limit, and no choice of ±1 decoder can move it.
+
+- **The ±1-head ansatz class hits a wall at ~0.88 fidelity** — and this is the subtle point worth stating carefully. That number is a *provable ceiling on a restricted class*: any positive amplitude network times any ±1 sign function tops out there against this state, because ±1 cannot represent a phase. It is not a ceiling on what we achieved. Letting the trunk go complex removes it entirely — the trained states reach F ≳ 0.95 across the whole plane, ≳ 0.999 in the easy region, two orders of magnitude in energy below where the ±1 class is stuck.
+
+The natural worry is that the complex trunk makes the head redundant. It doesn't, and we measured it: strip the head sign off a trained complex state and its fidelity collapses to ~0.25. So the division of labor is real — the head supplies the discrete sign backbone (the part a network learns from scratch only with difficulty), and the trunk's phase freedom mops up the residual e^{iφ} the ±1 head structurally cannot express. Complex trunk *on top of* the head, not instead of it.
+
+## The metric that can't lie
+
+Every plot in this project had been graded by energy error — the honest workhorse quantity, but an indirect one: a state can have low energy error and still be subtly wrong. So we switched the whole notebook to the thing energy error is a proxy for: the literal overlap F = |⟨ψ_ED | ψ_NQS⟩|² with the exact ground state, computed by enumerating all 2^N configurations through each trained network. At 2×3 that's 2^27 amplitudes per run, exact, no sampling.
+
+This is a luxury of being at the last ED-reachable size, and we spent it on 167 runs across every campaign, each carrying a built-in tripwire: from the same reconstructed wavefunction we recompute ⟨H⟩ and require it to match the run's logged training energy. That check earned its keep immediately — it caught a silent bug where the network was being rebuilt with the wrong internal rescale constant (the factory default differed from the trained value), which would have produced plausible-looking but wrong fidelities. Read the constants from the run's own record; trust the self-check, not the plot.
+
+The headline is the three-tier story told in the one metric that leaves no wiggle room:
+
+| architecture | trained fidelity F |
+|---|---|
+| plain CNN (no symmetry) | 0.0000022 |
+| positive symmetric Combo | 0.664 (its sign-free ceiling is 0.75) |
+| Combo + QEC sign head | **0.99998** |
+
+Read top to bottom, that is the entire thesis of the project in three numbers. The unconstrained network is essentially *orthogonal* to the target — it finds a different state entirely. The positive symmetric network gets the magnitudes right but, forbidden from representing the negative amplitudes, stalls at two-thirds overlap — pinned under the Hastings ceiling, exactly as the theorem demands. Add the deterministic sign head and the overlap jumps to 0.99998. The head converts a wavefunction that is orthogonal *in sign* to the truth into a near-exact one, with zero trainable sign parameters.
+
+## The sibling result: the 2D loop count was a shadow of a 3D linking number
+
+We handed the whole construction to the 3D fermionic toric-code project, with one instruction the user was firm about: do not tell them "the 2D loop count has no closed-form analogue in 3D" — that was a conjecture, and they should *investigate* it, with their own agent swarm, rather than inherit it.
+
+They found the closed form. At odd linear size the 3D fermionic sign is the mod-2 **self-linking number** of the flux loops with a body-diagonal framing — verified against their exact sign on 4000 of 4000 random configurations at L=3. Even sizes need a genuinely quadratic correction, which is where their pre-existing GF(2)-quadratic form comes back in. The unifying language is one our 2D result had been gesturing at all along: the sign is a *quadratic refinement* of the ℤ₂ linking form. On simply-connected geometry that refinement is canonical and collapses to a local counting invariant — our (−1)^{#loops}. On non-trivial topology (or, in 3D, at even L) the choice of refinement is real, classified by the Arf invariant, and physically it *is* the fermion. Our honeycomb study never saw this because it was deliberately open-boundary throughout — but the mechanism was hiding in our own proof that the loop count only equals the plaquette-flip recursion on simply-connected patches.
+
+They're now running the 2D playbook — gate-0 ceilings, framed head, the tier ladder, MWPM-and-greedy, exact fidelities — against 3D exact diagonalization. One thing we flagged for them: their syndrome is a whole diagonal *line* of edges per flip, an intrinsic L-fold tie, which makes their tie channel first-order rather than the geometrically-suppressed higher-order channel we enjoyed in 2D. So the one place our "decoder choice barely matters" conclusion is most likely to break is theirs — and that's exactly the kind of thing the ladder was built to measure.
+
+## Where this leaves the doubled semion
+
+Closed. The sign problem is solved on the sign-free cuts (exact) and along the whole real-field plane (TC-grade); the y-field cut is handled by letting the trunk carry the phases while the head carries the signs; every claim is now backed by exact fidelities, not just energies; and the construction has propagated to its intended destination, where it immediately did better than the person who handed it over expected. The interesting frontier is entirely in 3D now.
