@@ -13,7 +13,8 @@
 #   SIZES      (1x2+2x2+2x3+3x3+4x4+5x5+6x6+8x8+10x10+12x12)
 #   DECODERS   (mwpm+anchor+greedy+unionfind+tie_sum)
 #   DENSITIES  (0.005+0.02+0.08)     link-flip densities, neighborhood workload
-#   THREADS    (32)   numba/BLAS thread count(s), '+'-list => one run per value
+#   THREADS    (32)   numba thread count(s), '+'-list => one run per value
+#   BLAS_THREADS (1)  OMP/MKL/OpenBLAS pool size (pinned separately; 32+32 starves numba)
 #   API        (conn) flat | conn, '+'-list => one run per value
 #                     (conn = head.sign_pm1_conn on (n_base,1+N+F,N) neighbourhoods,
 #                      us/config over n_base*(2+N+F); flat = head.s01 on flat rows)
@@ -82,7 +83,7 @@ for api in ${API//,/ }; do
         --sizes "$SIZES" --decoders "$DECODERS" --densities "$DENSITIES" \
         --budget "$BUDGET" --construct_budget "$CONSTRUCT_BUDGET" --hard_cap "$HARD_CAP" \
         --n_base "$N_BASE" --repeats "$REPEATS" --chunk "$CHUNK" --seed "$SEED" \
-        --threads "$thr" --api "$api" \
+        --threads "$thr" --blas_threads "${BLAS_THREADS:-1}" --api "$api" \
         --tag "${TAG}_${api}_t${thr}" --out "$OUT/bench_decoders_${TAG}_${api}_t${thr}.json" $EXTRA
     rc=$?
     echo "=== bench_decoders api=$api threads=$thr done (exit $rc) $(date -u +%FT%TZ) ==="

@@ -13,7 +13,7 @@
 #
 # Env: SIZES ('+'-sep, default 1x2+2x2+2x3), ARMS ('+'-sep from cnn,mwpm,anchor,greedy,
 #      unionfind,tie_sum; default all six), POINTS (default 0.8:0.4 -- stresses the head: more defects per sample than the accuracy point (0.4,0)), SIM_TIME (1.0),
-#      SEED (0), THREADS (32), WANDB (1), WANDB_GROUP (hc-timing).
+#      SEED (0), THREADS (32 numba), BLAS_THREADS (1), WANDB (1), WANDB_GROUP (hc-timing).
 # Submit: ... submit jobs/nersc_timing_ladder.sh -t 1:00:00 --export=ALL,SIZES=3x3,ARMS=cnn+mwpm
 #SBATCH -A m5340_g
 #SBATCH -C gpu
@@ -39,7 +39,11 @@ POINTS="${POINTS:-0.8:0.4}"; POINTS="${POINTS//+/ }"
 SIM_TIME="${SIM_TIME:-1.0}"
 SEED="${SEED:-0}"
 export NUMBA_NUM_THREADS="${THREADS:-32}"
-echo "=== NUMBA_NUM_THREADS=$NUMBA_NUM_THREADS  SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-?}  code $(git -C "$REPO" rev-parse --short HEAD) ==="
+# BLAS threads are PINNED (default 1): OpenBLAS worker threads busy-wait after every call and
+# starve the numba row-parallel kernels (bench 2026-09-02: 32 numba + 32 BLAS threads => the head
+# ran 30-50x SLOWER than single-threaded at N=27-38). The GPU path needs no host BLAS.
+export OMP_NUM_THREADS="${BLAS_THREADS:-1}" OPENBLAS_NUM_THREADS="${BLAS_THREADS:-1}" MKL_NUM_THREADS="${BLAS_THREADS:-1}"
+echo "=== NUMBA_NUM_THREADS=$NUMBA_NUM_THREADS  BLAS threads=${BLAS_THREADS:-1}  SLURM_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK:-?}  code $(git -C "$REPO" rev-parse --short HEAD) ==="
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }

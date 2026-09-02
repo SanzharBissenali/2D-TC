@@ -101,15 +101,21 @@ import sys
 def _pre_parse_threads(argv):
     p = argparse.ArgumentParser(add_help=False)
     p.add_argument("--threads", type=int, default=1)
+    p.add_argument("--blas_threads", type=int, default=1)
     a, _ = p.parse_known_args(argv)
-    return max(1, int(a.threads))
+    return max(1, int(a.threads)), max(1, int(a.blas_threads))
 
 
-_THREADS = _pre_parse_threads(sys.argv[1:])
+# --threads drives ONLY the numba row-parallel kernels; the BLAS/OpenMP pools are pinned
+# separately (--blas_threads, default 1): OpenBLAS worker threads busy-wait after every
+# call and starve numba's threads when both pools are sized to the core count (measured
+# 2026-09-02 on Perlmutter: 32+32 threads => the head ran 30-50x SLOWER than 1 thread at
+# N=27-38). The production jobs pin BLAS to 1 the same way (jobs/nersc_timing_ladder.sh).
+_THREADS, _BLAS_THREADS = _pre_parse_threads(sys.argv[1:])
 _THREAD_VARS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
                 "NUMBA_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS")
 for _k in _THREAD_VARS:
-    os.environ[_k] = str(_THREADS)
+    os.environ[_k] = str(_THREADS if _k == "NUMBA_NUM_THREADS" else _BLAS_THREADS)
 
 import json          # noqa: E402
 import platform      # noqa: E402
@@ -131,6 +137,14 @@ except ImportError:
 from model.honeycomb_geometry import HoneycombGeometry  # noqa: E402
 from model.sign_head import QECSignHead                  # noqa: E402
 from model.decoders import effective_threads             # noqa: E402
+
+
+def _numba_layer():
+    try:
+        import numba
+        return numba.threading_layer()
+    except Exception:            # noqa: BLE001  (no parallel kernel run yet, or numba absent)
+        return None
 from exact.loops import count_loops                      # noqa: E402
 
 CODE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(model.__file__)))
@@ -536,6 +550,8 @@ def main():
     ap.add_argument("--threads", type=int, default=1,
                     help="BLAS/numba thread count pinned before numpy import "
                          "(numba prange kernels of the head use it; MWPM decode is 1-thread)")
+    ap.add_argument("--blas_threads", type=int, default=1,
+                    help="OMP/MKL/OpenBLAS pool size, pinned separately from --threads (default 1)")
     ap.add_argument("--api", choices=("flat", "conn"), default="flat",
                     help="flat: head.s01 on flattened rows; conn: head.sign_pm1_conn(x, xp) "
                          "on (n_base, 1+N+F, N) neighbourhoods, us/config over n_base*(2+N+F)")
@@ -570,6 +586,7 @@ def main():
             "cpu": _cpu_model(), **_versions(),
             "threads_env": {k: os.environ.get(k) for k in _THREAD_VARS},
             "threads": _THREADS, "numba_threads_effective": effective_threads(),
+            "blas_threads": _BLAS_THREADS, "numba_threading_layer": _numba_layer(),
             "api": args.api,
             "code_path": CODE_PATH, "git_hash": git_hash, "git_dirty": git_dirty,
             "args": vars(args), "step_formula": STEP_FORMULA, "total_wall_s": None,
