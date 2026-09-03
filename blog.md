@@ -355,7 +355,7 @@ medians over steps 50–99:
 | 27 | 4.11 s | 2.9% | 0.9% | 0.9% | 1.3% | 8% |
 | 38 | 8.92 s | 2.4% | 0.8% | 0.8% | 1.6% | 12% |
 | 63 | 19.1 s | 2.8% | 1.2% | 1.3% | 2.4% | 29% |
-| 94 | — | — | — | — | — | 50% |
+| 94 | 33.4 s | 3.9% | (running) | (running) | 3.2% | 50% |
 
 The GPU step grows roughly as N², and the four fast heads grow no faster, so their share *falls* with size:
 MWPM from 8% to 3%, greedy and union-find to ~1%. Subtracting the measured head time from each arm's step
