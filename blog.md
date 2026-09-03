@@ -328,3 +328,42 @@ implement (1) and (3), re-run the per-step measurement, and see whether the CPU-
 rounding error out to the 12×12 frontier. If it does, the architectural split — positive network on the
 device, deterministic sign on the host — costs nothing in wall-clock, which is the cleanest possible
 argument for keeping it that way in 3D.
+
+## Addendum (2026-09-03, morning): the CPU head measured in vivo
+
+We implemented options (1) and (3): every per-row kernel now runs `prange` over the batch, and the
+production call path decodes each sample once and serves its identity and hexagon-flip neighbours from
+that decode through the local parity rule `parity(r ⊕ ∂p) = parity(r) ⊕ 1 ⊕ ((n_down_legs_p(r)/2) mod 2)`
+— which is nothing but the doubled-semion plaquette phase D_p = i^{n_down_legs} read on the recovered
+configuration, verified against the direct loop count on 700,000 random flips with zero mismatches, and
+bit-identical on 890 regression checks at 1 and 8 threads. Two things we did not predict: pymatching's
+`decode_batch` holds the GIL, so the MWPM decode itself cannot be threaded (an Amdahl floor of ~1.6 µs per
+row at 12×12), and 32 numba threads next to 32 OpenBLAS threads made the head *30–50× slower* than a single
+thread at small N — OpenBLAS workers busy-wait after every call and starve the kernels. With the BLAS pool
+pinned to one thread the production path on Perlmutter is 2.1 µs per configuration for MWPM at N=479 (from
+5.3 single-threaded), 1.3 µs for greedy and union-find, 5.7 µs for anchor: 6–11 s of head time per VMC step
+at 479 qubits.
+
+The in-vivo measurement is the one that matters. Same network, same Hamiltonian at (h_x, h_z) = (0.8, 0.4),
+one arm with no head at all (the GPU-only baseline) and five arms with the head, 100 steps each, plateau
+medians over steps 50–99:
+
+| N | GPU-only step | MWPM head share | greedy | union-find | anchor | tie-sum |
+|---|---|---|---|---|---|---|
+| 11 | 0.35 s | 8% | 2% | 2% | 4% | 12% |
+| 19 | 1.81 s | 3.7% | 1.0% | 1.1% | 2.1% | 7% |
+| 27 | 4.11 s | 2.9% | 0.9% | 0.9% | 1.3% | 8% |
+| 38 | 8.92 s | 2.4% | 0.8% | 0.8% | 1.6% | 12% |
+| 63 | 19.1 s | 2.9% | 1.2% | — | 2.4% | — |
+| 94 | — | — | — | — | — | 50% |
+
+The GPU step grows roughly as N², and the four fast heads grow no faster, so their share *falls* with size:
+MWPM from 8% to 3%, greedy and union-find to ~1%. Subtracting the measured head time from each arm's step
+collapses the five curves onto the GPU-only one within the ±20–40% node-to-node noise of the shared queue —
+which is why the head *share*, immune to that noise, is the quantity to read. tie-sum is the exception and
+it is not a transient at this field: at 5×5 it spends 36 s of a 71 s step (50%) on the plateau, because the
+denser syndromes at h_x = 0.8 keep its minimal classes large. The question we set out to answer therefore
+has a clean answer for the production decoder and its understudies: leaving the QEC head on the CPU costs a
+few percent of a step at every size measured, decreasing with N, and there is no case for moving it to the
+device or for overlapping it with the GPU. (The 5×5 fast-arm runs were still queued when this was written;
+they extend the table, not the conclusion.)
