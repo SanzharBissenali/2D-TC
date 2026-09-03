@@ -1104,6 +1104,9 @@ Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `clu
   36 s of a 71 s step (50%) at step 86** — at strong field tie_sum is a genuine bottleneck; the four fast decoders are not.
   **FINAL (36/36 runs, 2026-09-03 11:14):** GPU-only step 0.35/1.81/4.11/8.92/19.1/33.4 s at N=11/19/27/38/63/94;
   head share on the plateau — mwpm 8.2→3.7→2.9→2.4→2.8→3.9%, greedy 2.1→1.0→0.9→0.8→1.2→1.9%, UF 2.2→1.1→0.9→0.8→1.3→2.0%,
-  anchor 4.4→2.1→1.3→1.6→2.4→3.2%, tie_sum 12→7→8→12→29→50%. Verdict: the CPU-resident head costs ≤4% of a step for the
+  anchor 4.4→2.1→1.3→1.6→2.4→3.2%, tie_sum 12→7→8→12→29→50%. **Statistic = plateau MEAN over steps 50–99 (user
+  decision 2026-09-03; was median)**, share = mean t_head / mean step_wall. Means ≈ medians for the fast four
+  (<1 pt); tie_sum's heavy tail lifts 4×4 from 12% (median) to 30% (mean), 5×5 51%. Fig 3 panel order: (a) t_head,
+  (b) share, (c) total step GPU-only vs GPU+head. Verdict: the CPU-resident head costs ≤4% of a step for the
   four production-grade decoders at every N ≤ 94 (no case for a GPU port or CPU/GPU overlap); tie_sum is the only
   decoder whose cost grows into the step. Figure 3 in analysis/06 (total, head-subtracted collapse, head share).
