@@ -1102,5 +1102,8 @@ Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `clu
   Node-to-node noise of the shared queue is ±20–40% on step_wall (2×3 anchor 5.7 s vs cnn 4.1 s with head 0.07 s)
   ⇒ compare via t_head/step_wall, not raw totals. **5×5 tie_sum at (0.8,0.4) does NOT recover on the plateau:
   36 s of a 71 s step (50%) at step 86** — at strong field tie_sum is a genuine bottleneck; the four fast decoders are not.
-  4×4/5×5 fast arms: queued (priority backlog after ~60 jobs/day). Figure 3 in analysis/06 (total, head-subtracted
-  collapse, head share).
+  **FINAL (36/36 runs, 2026-09-03 11:14):** GPU-only step 0.35/1.81/4.11/8.92/19.1/33.4 s at N=11/19/27/38/63/94;
+  head share on the plateau — mwpm 8.2→3.7→2.9→2.4→2.8→3.9%, greedy 2.1→1.0→0.9→0.8→1.2→1.9%, UF 2.2→1.1→0.9→0.8→1.3→2.0%,
+  anchor 4.4→2.1→1.3→1.6→2.4→3.2%, tie_sum 12→7→8→12→29→50%. Verdict: the CPU-resident head costs ≤4% of a step for the
+  four production-grade decoders at every N ≤ 94 (no case for a GPU port or CPU/GPU overlap); tie_sum is the only
+  decoder whose cost grows into the step. Figure 3 in analysis/06 (total, head-subtracted collapse, head share).

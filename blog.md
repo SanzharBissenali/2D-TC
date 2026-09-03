@@ -355,7 +355,7 @@ medians over steps 50–99:
 | 27 | 4.11 s | 2.9% | 0.9% | 0.9% | 1.3% | 8% |
 | 38 | 8.92 s | 2.4% | 0.8% | 0.8% | 1.6% | 12% |
 | 63 | 19.1 s | 2.8% | 1.2% | 1.3% | 2.4% | 29% |
-| 94 | 33.4 s | 3.9% | (running) | (running) | 3.2% | 50% |
+| 94 | 33.4 s | 3.9% | 1.9% | 2.0% | 3.2% | 50% |
 
 The GPU step grows roughly as N², and the four fast heads grow no faster, so their share *falls* with size:
 MWPM from 8% to 3%, greedy and union-find to ~1%. Subtracting the measured head time from each arm's step
@@ -365,5 +365,4 @@ it is not a transient at this field: at 4×4 it holds 29% of the step on the pla
 denser syndromes at h_x = 0.8 keep its minimal classes large. The question we set out to answer therefore
 has a clean answer for the production decoder and its understudies: leaving the QEC head on the CPU costs a
 few percent of a step at every size measured, decreasing with N, and there is no case for moving it to the
-device or for overlapping it with the GPU. (The 5×5 fast-arm runs were still queued when this was written;
-they extend the table, not the conclusion.)
+device or for overlapping it with the GPU. (The 5×5 fast arms landed at 11:14: GPU-only 33.4 s/step, heads 0.7–1.4 s.)
