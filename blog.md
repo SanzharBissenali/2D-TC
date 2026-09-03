@@ -346,23 +346,47 @@ at 479 qubits.
 
 The in-vivo measurement is the one that matters. Same network, same Hamiltonian at (h_x, h_z) = (0.8, 0.4),
 one arm with no head at all (the GPU-only baseline) and five arms with the head, 100 steps each, plateau
-medians over steps 50–99:
+means over steps 50–99 (share = total head seconds over total step seconds on the plateau):
 
 | N | GPU-only step | MWPM head share | greedy | union-find | anchor | tie-sum |
 |---|---|---|---|---|---|---|
-| 11 | 0.35 s | 8% | 2% | 2% | 4% | 12% |
+| 11 | 0.35 s | 8.2% | 2.2% | 2.3% | 4.4% | 12% |
 | 19 | 1.81 s | 3.7% | 1.0% | 1.1% | 2.1% | 7% |
 | 27 | 4.11 s | 2.9% | 0.9% | 0.9% | 1.3% | 8% |
-| 38 | 8.92 s | 2.4% | 0.8% | 0.8% | 1.6% | 12% |
-| 63 | 19.1 s | 2.8% | 1.2% | 1.3% | 2.4% | 29% |
-| 94 | 33.4 s | 3.9% | 1.9% | 2.0% | 3.2% | 50% |
+| 38 | 9.02 s | 2.5% | 0.8% | 0.8% | 1.7% | 12% |
+| 63 | 19.2 s | 2.8% | 1.2% | 1.2% | 2.4% | 30% |
+| 94 | 33.5 s | 4.0% | 1.9% | 2.0% | 3.2% | 51% |
 
 The GPU step grows roughly as N², and the four fast heads grow no faster, so their share *falls* with size:
 MWPM from 8% to 3%, greedy and union-find to ~1%. Subtracting the measured head time from each arm's step
 collapses the five curves onto the GPU-only one within the ±20–40% node-to-node noise of the shared queue —
 which is why the head *share*, immune to that noise, is the quantity to read. tie-sum is the exception and
-it is not a transient at this field: at 4×4 it holds 29% of the step on the plateau, and at 5×5 it spends 36 s of a 71 s step (50%), because the
+it is not a transient at this field: at 4×4 it holds 30% of the step on the plateau, and at 5×5 it spends 37 s of a 72 s step (51%), because the
 denser syndromes at h_x = 0.8 keep its minimal classes large. The question we set out to answer therefore
 has a clean answer for the production decoder and its understudies: leaving the QEC head on the CPU costs a
 few percent of a step at every size measured, decreasing with N, and there is no case for moving it to the
 device or for overlapping it with the GPU. (The 5×5 fast arms landed at 11:14: GPU-only 33.4 s/step, heads 0.7–1.4 s.)
+
+## Closing the 2D speed question (2026-09-03)
+
+Two last edits and a decision. First, the statistic: the plateau numbers above are now *means* over steps
+50–99 rather than medians. For the four fast decoders it makes no difference (they move by less than a
+point), which is itself a statement — their per-step cost has no tail. For tie-sum it matters: at 4×4 the
+median said 12% and the mean says 30%, because a minority of steps with many defects each cost tens of
+seconds, and a decoder whose cost is dominated by its worst samples should be judged by the mean. Second,
+the figure: the microbenchmark — µs per configuration on a synthetic neighbourhood workload — is gone from
+the notebook. It was useful for optimizing the kernels and for finding the BLAS/numba contention, but the
+quantity anyone will ask about is the in-vivo one, so the single speed figure is now the timing ladder:
+(a) head seconds per VMC step, (b) head share of the step, (c) the total step for the GPU-only baseline
+and the five head arms.
+
+Then the decision. Extending the ladder to ~200 and ~300 qubits (8×8, N=223; 10×10, N=339) would cost
+roughly 105 GPU-hours and a day and a half of calendar time: the GPU-only step extrapolates to 2–3 and
+4–7 minutes, the fast heads to 3–20 seconds of it, tie-sum to 5–9 minutes, and every 100-step run fits the
+48-hour shared-queue limit. It would also tell us nothing we do not already know. The head share of the
+four production-grade decoders is a few percent and its trend is flat-to-slowly-rising; the GPU step is
+launch-latency bound (a chain of 4N sequential Metropolis sub-steps), so it, not the head, is what a 3D
+production run has to worry about; and tie-sum's fate was sealed at N=94. The 2D doubled-semion program
+ends here. What it hands to the 3D fermionic code: MWPM as the sign prior with an explicit tie-break,
+greedy as the compiled understudy, the head on the CPU, and the ceiling formalism (1 − F_s) as the
+grading tool — all in `docs/decoder_scaling.md` and the peer handoff.

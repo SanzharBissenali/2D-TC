@@ -1027,7 +1027,7 @@ Key NERSC gotchas learned:
 - Do `pip install` on a login node (compute nodes have no internet). `$SCRATCH` is purged
   periodically → git is the durable store, re-clone if needed.
 
-## Current work — decoder scaling: speed & accuracy of the 5 QEC-head decoders vs N (2026-09-02)
+## Decoder scaling: speed & accuracy of the 5 QEC-head decoders vs N (2026-09-02) — CLOSED 2026-09-03
 Overnight+day campaign (user asleep; blanket submit permission): two plots, five curves each, x = qubits N.
 Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `cluster.sh fetch`; figures →
 `figures/decoder_scaling/`). Field point (0.4, 0) for the in-vivo ladder (matches Phase-4c 2×3 data).
@@ -1113,3 +1113,18 @@ Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `clu
   ladder IS the speed figure (Figure 1: (a) t_head, (b) share, (c) total step GPU-only vs GPU+head; plateau means);
   the microbenchmark figure/tables were dropped from the notebook (bench JSONs stay in results/diagnostics/).
   Figure 2 = accuracy. Figure file: figures/decoder_scaling/fig1_step_time_vs_N.png.**
+- **CLOSED 2026-09-03 (user decision: "nothing to gain from those runs in 2D — we finish here").** Final
+  deliverable = `analysis/06_decoder_scaling.ipynb` (17 cells; Figure 1 = in-vivo timing ladder N=11..94,
+  plateau MEANS steps 50–99, panels (a) t_head (b) share (c) total step; Figure 2 = accuracy; bench figure
+  removed, bench JSONs kept). NO 8×8/10×10 runs were launched. For the record, the estimate that was NOT
+  acted on: 8×8 (F=64, N=223, V=160, T=585 taps, P=159,369, minSR Jacobian 10.4 GB) and 10×10 (F=100, N=339,
+  V=240, T=893, P=243,145, 15.9 GB) — GPU-only step extrapolates 117–190 s / 215–435 s (measured local
+  exponent fell 3.0→1.4 over N=11→94, fit 1.45; bracket exp 1.45–2; mechanism = sampling is 8·n_sweeps=4N
+  SEQUENTIAL batch-1024 Metropolis sub-steps ⇒ launch-latency bound ~N, with the V² Block-3 contraction
+  slowly on top; the (V,V,16,8) gathered kernel is unbatched under vmap, 26/59 MB, so no memory wall);
+  head per step from bench×in-vivo ratio (~2.3× the 0.5%-flip bench for mwpm/greedy/UF, 1.6× anchor, 2×
+  tie_sum): mwpm ~6/13 s, greedy/UF ~3.5/8 s, anchor ~8/20 s, tie_sum ~270/550 s ⇒ 100-step runs 3.3–5.4 h
+  (8×8 fast arms), 6–12.5 h (10×10 fast), 11–13 h / 21–27 h (tie_sum); 12 jobs, ~105 GPU-h. **Shared QOS
+  MaxWall verified via sacctmgr = 2-00:00:00 (48 h)**, debug 30 min — so such runs would fit one job each.
+  Only real risk: 10×10 Jacobian working copies near the 40 GB A100. 2D program is finished; what
+  transfers to the 3D peer is in `docs/decoder_scaling.md` §4/§6 and the handoff already delivered.

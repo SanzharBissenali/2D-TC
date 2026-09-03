@@ -190,3 +190,33 @@ TQEC arXiv:1812.05117; K-best matchings Chegireddy–Hamacher DAM 18, 155 (1987)
 arXiv:2510.06531. 3D point-charge matching precedent: arXiv:2009.11790,
 arXiv:2106.02621; 3D thresholds quant-ph/0207088, quant-ph/0401101,
 arXiv:1808.03092. Geodesic counting: DLMF §26.3.
+
+## 6. Closure — in-vivo timing ladder and the decision to stop in 2D (2026-09-03)
+
+The bench numbers above were followed by the measurement that matters: the head timed *inside* NQS
+training (`jobs/nersc_timing_ladder.sh`, `analysis/06_decoder_scaling.ipynb` Figure 1). Same positive
+Combo network and DS Hamiltonian at (h_x, h_z) = (0.8, 0.4), one GPU-only arm (no head) plus the five
+head arms, 100 minSR steps each on one A100 shared slice, 32 numba threads with the BLAS pool pinned to
+one thread (32 + 32 threads starve the kernels 30–50×). Statistic = plateau mean over steps 50–99;
+share = Σ t_head / Σ step_wall on the plateau.
+
+| N (size) | GPU-only step | MWPM | greedy | union-find | anchor | tie_sum |
+|---|---|---|---|---|---|---|
+| 11 (1×2) | 0.35 s | 8.2% | 2.2% | 2.3% | 4.4% | 12% |
+| 19 (2×2) | 1.81 s | 3.7% | 1.0% | 1.1% | 2.1% | 7% |
+| 27 (2×3) | 4.11 s | 2.9% | 0.9% | 0.9% | 1.3% | 8% |
+| 38 (3×3) | 9.02 s | 2.5% | 0.8% | 0.8% | 1.7% | 12% |
+| 63 (4×4) | 19.2 s | 2.8% | 1.2% | 1.2% | 2.4% | 30% |
+| 94 (5×5) | 33.5 s | 4.0% | 1.9% | 2.0% | 3.2% | 51% |
+
+Verdict: the CPU-resident head costs 1–4% of a VMC step for MWPM, greedy, union-find and anchor at every
+size measured — no case for a GPU port or CPU/GPU overlap. tie_sum is the one decoder whose cost grows
+into the step at strong field (heavy-tailed per-step cost; mean ≫ median at 4×4), confirming its
+retirement. The GPU step itself is launch-latency bound: sampling is 8 · n_sweeps = 4N *sequential*
+batch-1024 Metropolis sub-steps, so it grows ~N^1.4–1.5 here and will dominate any production run.
+
+**Not run, by decision (2026-09-03):** 8×8 (N=223, P=159k, Jacobian 10.4 GB) and 10×10 (N=339, P=243k,
+15.9 GB). Estimate: GPU-only step 117–190 s / 215–435 s; head 3–20 s for the fast four, 270/550 s for
+tie_sum; 100-step runs 3–13 h (fast) and 11–27 h (tie_sum); 12 jobs ≈ 105 GPU-h; shared QOS MaxWall is
+48 h so each fits one job. Nothing in it would change the verdict, so the 2D program stops here; the 3D
+port checklist in §4 is the deliverable that carries forward.
