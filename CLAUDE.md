@@ -1109,4 +1109,7 @@ Notebook `analysis/06_decoder_scaling.ipynb` (glob-driven, re-execute after `clu
   (<1 pt); tie_sum's heavy tail lifts 4×4 from 12% (median) to 30% (mean), 5×5 51%. Fig 3 panel order: (a) t_head,
   (b) share, (c) total step GPU-only vs GPU+head. Verdict: the CPU-resident head costs ≤4% of a step for the
   four production-grade decoders at every N ≤ 94 (no case for a GPU port or CPU/GPU overlap); tie_sum is the only
-  decoder whose cost grows into the step. Figure 3 in analysis/06 (total, head-subtracted collapse, head share).
+  decoder whose cost grows into the step. **Notebook 06 restructured 2026-09-03 (user decision): the in-vivo timing
+  ladder IS the speed figure (Figure 1: (a) t_head, (b) share, (c) total step GPU-only vs GPU+head; plateau means);
+  the microbenchmark figure/tables were dropped from the notebook (bench JSONs stay in results/diagnostics/).
+  Figure 2 = accuracy. Figure file: figures/decoder_scaling/fig1_step_time_vs_N.png.**
