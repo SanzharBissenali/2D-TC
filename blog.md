@@ -390,3 +390,75 @@ production run has to worry about; and tie-sum's fate was sealed at N=94. The 2D
 ends here. What it hands to the 3D fermionic code: MWPM as the sign prior with an explicit tie-break,
 greedy as the compiled understudy, the head on the CPU, and the ceiling formalism (1 − F_s) as the
 grading tool — all in `docs/decoder_scaling.md` and the peer handoff.
+
+## Coda: what the sign frame actually does (2026-09-08)
+
+A question that kept coming back deserves a written answer: if the QEC head is a separate, deterministic
+object and the network is a separate, learnable object, in what sense are they "two branches", and does the
+H̃ = SHS trick really make the head free?
+
+**The factorization is exact and the factors are independent as functions.** ψ(σ) = (−1)^{s(σ)} · A_θ(σ),
+i.e. ψ = S·A with S = diag((−1)^s). The head s has no parameters and never changes; A_θ is the Combo. The
+two are coupled only through the energy, and the trick is where that coupling is placed. Because S is
+diagonal, parameter-free and S² = 1,
+
+E[θ] = ⟨ψ|H|ψ⟩/⟨ψ|ψ⟩ = ⟨A|SHS|A⟩/⟨A|A⟩ = ⟨A|H̃|A⟩/⟨A|A⟩.
+
+Minimizing the energy of ψ under H *is* minimizing the energy of A under H̃. The head leaves the wavefunction
+and reappears inside the Hamiltonian. Term by term: the sampler draws |A|² = |ψ|² and never sees the head;
+∂θ log ψ = ∂θ log A, so the QGT and the minSR solve are those of the positive real Combo, untouched from
+Phase 3; off-diagonal observables are evaluated as SOS; and the head enters in exactly one place, the local
+energy
+
+E_loc(σ) = Σ_σ' (−1)^{s(σ)+s(σ')} H_σσ' A(σ')/A(σ),
+
+as the *relative* sign between a sample and each of its connected configurations. It decides which pairs
+interfere constructively and which destructively; A only has to learn a smooth positive landscape on top.
+Physically H̃ is H written in the rotated basis |σ̃⟩ = (−1)^{s(σ)}|σ⟩. The head is a configuration-dependent
+sign rule, the same move as the Marshall rule for the Heisenberg antiferromagnet, except supplied by a QEC
+decoder instead of a sublattice pattern. In the rotated basis the doubled-semion ground state is positive at
+h_x = 0 and nearly positive at h_x > 0, and that is what a positive network can represent. The earlier
+implementation put iπ·s(σ) into log ψ inside the network instead; it gives the same numbers to 4e-15 but
+needs a complex log ψ, a host callback inside the sampler and a complex QGT. The frame form avoids all three.
+
+**Where the two are not independent.** The head fixes the sign structure and A must live with it. If s is
+wrong on a configuration, A can only pay the energy or suppress that amplitude. The ceiling 1 − F_s is
+exactly the best A can do given that fixed S: the decoder quality sets the floor, the network's job is
+everything above it.
+
+**Why it is not free.** Rotating the head into H̃ does not remove its computation, it relocates it. S is a
+2^N diagonal that is never materialized; it is applied row by row, every step, to the configurations that
+actually appear in E_loc. Those are the 8192 samples and all their 1 + N + F connected configurations, and
+the head is evaluated on every one of them — the same set the network is evaluated on. The
+network-branch formulation would need s on exactly the same set, which is why the two are bit-identical and
+cost the same. What the frame buys is not fewer head evaluations but three other things: the sampler is
+pure GPU (a host callback inside the 4N sequential Metropolis sub-steps would have been far worse than
+anything we measured), the QGT stays real, and the head can be any deterministic function at all, a
+decoder, a lookup table or a cup product, without being differentiable or expressible in JAX.
+
+So the measured cost is compute, not communication. The connected configurations and matrix elements are
+built on the host and shipped to the device in the head-free run too, in arrays of the same size; the head
+only flips signs inside them. What it adds is decoding 8192·(1 + N) syndromes on 32 cores, about a
+microsecond per row, while the GPU waits — a serialization, not a latency. Overlapping the two would hide at
+most the head time itself, so the ceiling on any such optimization is the 1–4% share of Figure 1. (For the
+record, the step's three phases: sampling, 1024 chains in lockstep, 4N sequential batch-1024 forwards,
+launch-latency bound, which is why the GPU step grows like N^1.4 rather than N^3; the local energy, host
+matrix elements plus about a million forwards in chunks of 2048; the Jacobian and the 8192 × 8192 minSR
+solve, whose cost is set by the sample count, not by the parameter count.)
+
+**And with a complex trunk?** The identity holds unchanged: ⟨ψ|H|ψ⟩ = ⟨A|S†HS|A⟩ needs only that S is
+diagonal, parameter-free and unitary. Sampling still uses |A|², ∂θ log ψ = ∂θ log A still, the QGT is the
+ordinary complex QGT of A (the price of any complex ansatz, unrelated to the head), and H̃ = SHS stays
+Hermitian whether H is real or, at h_y ≠ 0, complex. This is exactly what the cnnqC arm ran in Phase 4b and
+what all five decoder arms ran in Phase 4d; the framing code is dtype-agnostic and was never touched. What
+changes is conceptual: with a positive trunk the factorization is unique (A carries the modulus, S every
+sign); with a complex trunk it is not, since A could absorb a phase π anywhere. The head then becomes a
+*prior* for the sign structure rather than a constraint — the trunk starts from the head's signs and may
+override them. Phase 4d showed it does not undo them: stripping the head from the trained complex state
+dropped the fidelity to about 0.25, so the trunk learned continuous phases on top of the head's ±1. And
+Phase 3 showed the converse: a complex trunk with no head never finds those signs on its own.
+
+Separate pathways are needed in only two cases. If the head carries parameters, as in the residual-phase
+arm cnnqR, it must be differentiated and so lives in the model. And a parameter-free head emitting general
+phases e^{iφ(σ)} rather than ±1 still frames as H̃ = S†HS, but H̃ is then complex Hermitian even for real H.
+
