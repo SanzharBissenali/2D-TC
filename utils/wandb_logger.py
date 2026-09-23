@@ -72,6 +72,8 @@ def _tags(config):
         tags.append(f"sign-{config.get('sign_head')}-{config.get('sign_impl', 'operator')}")
         if config.get("decoder", "mwpm") != "mwpm":
             tags.append(f"dec-{config.get('decoder')}")
+        if config.get("mlp_init"):
+            tags.append("mlp-pre")      # arm M-pre vs M share sign_impl 'mlp'
     return tags
 
 

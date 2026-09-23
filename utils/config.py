@@ -207,12 +207,16 @@ def parse_arguments() -> Dict[str, Any]:
                         help="Phase-4 deterministic sign head (honeycomb ds only): 'qec' = "
                              "Q_v syndrome -> MWPM recovery -> (-1)^{#loops} (model/sign_head.py). "
                              "Default 'none' is byte-identical to Phase 3.")
-    parser.add_argument('--sign_impl', choices=['operator', 'model', 'residual'], default='operator',
+    parser.add_argument('--sign_impl', choices=['operator', 'model', 'residual', 'mlp', 'twobranch'],
+                        default='operator',
                         help="How the sign head enters: 'operator' (production) trains the "
                              "positive real Combo on the sign-framed H~ = SHS; 'model' "
                              "(equivalence witness) adds 1j*pi*s(sigma) to log psi via "
                              "jax.pure_callback; 'residual' (Phase 4b) = 'model' plus the "
-                             "tie-gated residual phase MLP over decoder features.")
+                             "tie-gated residual phase MLP over decoder features; "
+                             "'mlp' (learned-sign arm M / M-pre) psi = A * tanh(MLP(eps, x)); "
+                             "'twobranch' (arm T) psi = e^c A_triv + (-1)^s A_top "
+                             "(docs/signhead_benchmark_plan.md).")
     parser.add_argument('--decoder', choices=['mwpm', 'anchor', 'greedy', 'unionfind', 'tie_sum'],
                         default='mwpm',
                         help="Phase-4c recovery rule inside the QEC sign head (model/decoders.py "
@@ -220,6 +224,17 @@ def parse_arguments() -> Dict[str, Any]:
                              "to Phase 4/4b. Non-mwpm decoders pair with --sign_impl operator only.")
     parser.add_argument('--res_hidden', type=int, default=16,
                         help='Hidden width of the Phase-4b residual phase MLP (sign_impl residual)')
+    parser.add_argument('--mlp_hidden', type=int, default=64,
+                        help='sign_impl mlp: hidden width of the learned sign MLP m_theta(eps, x)')
+    parser.add_argument('--mlp_depth', type=int, default=2,
+                        help='sign_impl mlp: number of tanh hidden layers (0 = linear)')
+    parser.add_argument('--mlp_init', type=str, default='',
+                        help="sign_impl mlp: npz of pretrained MLP params (arm M-pre; written by "
+                             "scripts/pretrain_sign_mlp.py, spec in model/sign_mlp_io.py) -- "
+                             "replaces the 'mlp' subtree after init")
+    parser.add_argument('--mix_init', type=float, default=-3.0,
+                        help='sign_impl twobranch: init of the scalar log-mix c '
+                             '(psi = e^c A_triv + s A_top; -inf = head-only arm)')
     parser.add_argument('--minsr_mode', choices=['', 'real', 'complex', 'holomorphic'], default='',
                         help="Optional VMC_SRt jacobian_mode override ('' = netket auto). "
                              "'complex' on a real arm tightens A/B trajectory comparability.")
@@ -262,6 +277,10 @@ def parse_arguments() -> Dict[str, Any]:
             'sign_impl': 'operator',
             'decoder': 'mwpm',
             'res_hidden': 16,
+            'mlp_hidden': 64,
+            'mlp_depth': 2,
+            'mlp_init': '',
+            'mix_init': -3.0,
             'minsr_mode': '',
             'lr_final_frac': 0.1,
             'optimizer': 'tdvp',
@@ -347,6 +366,18 @@ def parse_arguments() -> Dict[str, Any]:
             "(hy/Jy_p anticommute with the dressed star same as hx -- unvalidated cut)"
         )
 
+    # Learned-sign arms are sign-head arms: without --sign_head qec the impl
+    # would be silently ignored (main.py only wraps the trunk under 'qec');
+    # --mlp_init is the M-pre warm start of the 'mlp' subtree and nothing else.
+    if args.get('sign_impl', 'operator') in ('mlp', 'twobranch'):
+        assert args.get('sign_head', 'none') == 'qec', \
+            "--sign_impl mlp/twobranch need --sign_head qec (honeycomb --model ds)"
+    if args.get('mlp_init', ''):
+        assert args.get('sign_impl', 'operator') == 'mlp', \
+            "--mlp_init pretrained sign MLP needs --sign_impl mlp (arm M-pre)"
+    assert args.get('mlp_hidden', 64) >= 1 and args.get('mlp_depth', 2) >= 0, \
+        "--mlp_hidden >= 1 and --mlp_depth >= 0"
+
     # Honeycomb (Levin-Gu TC / doubled semion): hx/hz fields only; every square-
     # lattice Hamiltonian experiment stays excluded. The custom sampler IS
     # supported since Phase 2 (hexagon-flip clusters + in-sector chain init in
@@ -383,6 +414,12 @@ def parse_arguments() -> Dict[str, Any]:
             if args.get('sign_impl', 'operator') == 'residual':
                 assert not args.get('complex_ansatz', False), \
                     "--sign_impl residual pairs with the real trunk (drop --complex_ansatz)"
+            # Learned-sign benchmark arms (docs/signhead_benchmark_plan.md): real
+            # trunk(s) + the model's own complex log; the complex trunk would
+            # double up the phase freedom and break the M-vs-T comparison.
+            if args.get('sign_impl', 'operator') in ('mlp', 'twobranch'):
+                assert not args.get('complex_ansatz', False), \
+                    "--sign_impl mlp/twobranch pair with the real trunk (drop --complex_ansatz)"
             # hy != 0 forces a complex trunk (below) even without the flag, so
             # the model/residual impls -- validated on the real trunk only --
             # are excluded on the hy axis (swarm finding 2026-09-01).
@@ -523,6 +560,10 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "sign_impl": [config.get("sign_impl", "operator")],
             "decoder": [config.get("decoder", "mwpm")],
             "res_hidden": [config.get("res_hidden", 16)],
+            "mlp_hidden": [config.get("mlp_hidden", 64)],
+            "mlp_depth": [config.get("mlp_depth", 2)],
+            "mlp_init": [config.get("mlp_init", "")],
+            "mix_init": [config.get("mix_init", -3.0)],
             "minsr_mode": [config.get("minsr_mode", "")],
             "Lx": [config["Lx"]],
             "Ly": [config["Ly"]],

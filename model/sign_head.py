@@ -136,6 +136,28 @@ def _conn_shortcut_kernel(xb, xpb, rb, s_x, link2plaq, plaq_all, legs_all, out):
                 out[b, c] = s_x[b] ^ 1 ^ ((nd >> 1) & 1)
 
 
+def _gf2_left_inverse(G):
+    """F x N left-inverse P of the N x F 0/1 matrix G over GF(2): P @ G == I_F
+    (mod 2). Gauss-Jordan on [G | I_N]; requires full column rank (asserted) --
+    true for the hexagon-boundary matrix on the simply-connected patch, where
+    the F hexagon masks are a basis of the cycle space (dim F)."""
+    G = np.asarray(G, dtype=np.uint8) % 2
+    N, F = G.shape
+    A = np.concatenate([G, np.eye(N, dtype=np.uint8)], axis=1)
+    for col in range(F):
+        piv = np.flatnonzero(A[col:, col])
+        assert piv.size, "hexagon masks are GF(2)-dependent?!"
+        p = col + int(piv[0])
+        if p != col:
+            A[[col, p]] = A[[p, col]]
+        others = np.flatnonzero(A[:, col])
+        others = others[others != col]
+        A[others] ^= A[col]
+    P = np.ascontiguousarray(A[:F, F:])
+    assert ((P.astype(np.int64) @ G.astype(np.int64)) % 2 == np.eye(F, dtype=np.int64)).all()
+    return P
+
+
 class QECSignHead:
     """Build once per run; ``s01``/``sign_pm1`` map batches of +-1 spin
     configurations to {0,1} loop parities / +-1 signs.
@@ -178,6 +200,32 @@ class QECSignHead:
                 assert link2plaq[e, slot] < 0, "link on > 2 hexagons?!"
                 link2plaq[e, slot] = p
         self._link2plaq = link2plaq
+
+        # hexagon-flip (application) variables x, r = G x over GF(2) on the
+        # zero-syndrome sector (learned-sign benchmark, docs/signhead_benchmark_
+        # plan.md): G = (N, F) link-in-hexagon incidence, Ginv its left-inverse
+        # (unique x per sector config: the masks are a cycle-space basis).
+        # Levin-Gu cubic tables: pairs = hexagons sharing a link, triples = the
+        # three hexagons around a degree-3 vertex (plaq_vertices).
+        G = np.zeros((self.N, self.F), dtype=np.uint8)
+        for p in range(self.F):
+            G[self._plaq_all[p], p] = 1
+        self._G = G
+        self._Ginv = _gf2_left_inverse(G)                       # (F, N)
+        pairs = sorted({tuple(sorted(link2plaq[l])) for l in range(self.N)
+                        if link2plaq[l].min() >= 0})
+        pv = np.asarray(geometry.plaq_vertices)
+        assert pv.shape == (self.F, 6)
+        trip = {}
+        for p in range(self.F):
+            for v in pv[p]:
+                trip.setdefault(int(v), []).append(p)
+        triples = sorted(tuple(sorted(ps)) for ps in trip.values() if len(ps) == 3)
+        assert all(len(ps) <= 3 for ps in trip.values()), "vertex on > 3 hexagons?!"
+        self._pairs = np.asarray(pairs, dtype=np.int64).reshape(-1, 2)
+        self._triples = np.asarray(triples, dtype=np.int64).reshape(-1, 3)
+        if self.F <= 16:
+            self._check_poly_vs_parity()
 
         rows = np.asarray(geometry.link_endpoints).T.ravel()
         cols = np.tile(np.arange(self.N), 2)
@@ -354,3 +402,74 @@ class QECSignHead:
         self.t_head += time.perf_counter() - t0
         self.n_head_configs += int(bits.shape[0])
         return out.reshape(lead + (self.n_features,))
+
+    # -- learned-sign benchmark: hexagon-flip variables + Levin-Gu polynomial ---
+    def x_of_r(self, rbits, check=False):
+        """(..., N) zero-syndrome config bits r -> (..., F) uint8 hexagon-flip
+        variables x with G x == r (mod 2), via the precomputed GF(2) left-
+        inverse (x is unique on the simply-connected patch). ``check`` asserts
+        the round-trip G x == r for the whole batch (an off-sector r has no x
+        and fails it) -- validation paths only."""
+        r = np.asarray(rbits)
+        lead = r.shape[:-1]
+        r = (r.reshape(-1, self.N).astype(np.uint8) & 1)
+        x = ((r.astype(np.int64) @ self._Ginv.T.astype(np.int64)) & 1).astype(np.uint8)
+        if check:
+            back = ((x.astype(np.int64) @ self._G.T.astype(np.int64)) & 1).astype(np.uint8)
+            assert (back == r).all(), "x_of_r round-trip failed (off-sector input?)"
+        return x.reshape(lead + (self.F,))
+
+    def poly_sign01(self, x):
+        """Levin-Gu cubic parity of the hexagon-flip variables, (..., F) -> (...,)
+        uint8 in {0,1}:  sum_p x_p + sum_{p<q share a link} x_p x_q
+        + sum_{p<q<r share a vertex} x_p x_q x_r  (mod 2)  == #loops(G x) mod 2
+        (the closed form of the loop parity on the sector; asserted against
+        loop_parity01 on all 2^F sector configs at construction for F <= 16)."""
+        x = np.asarray(x)
+        lead = x.shape[:-1]
+        x = x.reshape(-1, self.F).astype(np.int64) & 1
+        tot = x.sum(axis=1)
+        if self._pairs.size:
+            tot += (x[:, self._pairs[:, 0]] * x[:, self._pairs[:, 1]]).sum(axis=1)
+        if self._triples.size:
+            tot += (x[:, self._triples[:, 0]] * x[:, self._triples[:, 1]]
+                    * x[:, self._triples[:, 2]]).sum(axis=1)
+        return (tot & 1).astype(np.uint8).reshape(lead)
+
+    def _check_poly_vs_parity(self):
+        """Construction gate: on every one of the 2^F sector configs r = G x,
+        poly_sign01(x) == loop_parity01(r) and x_of_r(r) == x."""
+        X = ((np.arange(1 << self.F, dtype=np.int64)[:, None] >> np.arange(self.F)) & 1
+             ).astype(np.uint8)
+        R = ((X.astype(np.int64) @ self._G.T.astype(np.int64)) & 1).astype(np.uint8)
+        lp = self._parity(R, self._ends, self.V)
+        assert (lp >= 0).all(), "G x left the sector?!"
+        assert (self.poly_sign01(X) == lp.astype(np.uint8)).all(), \
+            "Levin-Gu polynomial != loop parity on the sector"
+        assert (self.x_of_r(R, check=True) == X).all(), "x_of_r is not G's inverse"
+
+    @property
+    def n_features_ex(self):
+        """Width N + F of features_ex(): [eps (N), x (F)]."""
+        return self.N + self.F
+
+    def features_ex(self, states):
+        """Learned-sign-arm features, shape lead + (N + F,), float64 in {0,1}:
+        [eps, x] with eps the decoder-A (production MWPM) correction bits and
+        x = x_of_r(sigma XOR eps) the hexagon-flip variables of the repaired
+        config. (eps, x) determines sigma (sigma = G x XOR eps) and the head
+        sign is the closed form (-1)^{poly_sign01(x)} -- arm M sees exactly
+        what arm T's head uses (docs/signhead_benchmark_plan.md Sec. 1)."""
+        assert self._alt is None, \
+            "features_ex() is decoder-A MWPM machinery (mlp arm); " \
+            "pair --sign_impl mlp with --decoder mwpm"
+        t0 = time.perf_counter()
+        states = np.asarray(states)
+        lead = states.shape[:-1]
+        bits = self._bits(states)
+        corr = self._matching.decode_batch(self._syndrome(bits)).astype(np.uint8)
+        x = self.x_of_r(bits ^ corr)
+        out = np.concatenate([corr, x], axis=1).astype(np.float64)
+        self.t_head += time.perf_counter() - t0
+        self.n_head_configs += int(bits.shape[0])
+        return out.reshape(lead + (self.n_features_ex,))

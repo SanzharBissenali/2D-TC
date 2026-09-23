@@ -229,6 +229,113 @@ class ResidualSignedModel(nn.Module):
         return log_a + 1j * (jnp.pi * s + phi)
 
 
+class _SignMLP(nn.Module):
+    """``depth`` tanh Dense layers of width ``hidden`` then Dense(1); float64,
+    default flax init (lecun-normal kernels, zero biases). Instantiated under
+    the fixed scope name 'mlp' so a pretrained tree can replace it wholesale
+    (model/sign_mlp_io.py holds the flat key/shape spec)."""
+
+    hidden: int
+    depth: int
+
+    @nn.compact
+    def __call__(self, u):
+        h = u
+        for _ in range(self.depth):
+            h = nn.tanh(nn.Dense(self.hidden, param_dtype=jnp.float64)(h))
+        return nn.Dense(1, param_dtype=jnp.float64)(h)[..., 0]
+
+
+class MLPSignModel(nn.Module):
+    """Learned-sign arm M / M-pre (docs/signhead_benchmark_plan.md):
+
+        psi = A_theta(sigma) * tanh(m_theta(u)),   u = features_ex(sigma) = [eps, x],
+
+    log psi = log A + log|tanh m| + 1j*pi*[tanh m < 0] -- a complex log with
+    REAL params (non-holomorphic QGT path, like ResidualSignedModel). The MLP
+    sees exactly the decoder-derived variables the closed-form head uses
+    ((eps, x) determines sigma), but must LEARN the sign from the energy alone
+    (arm M, random init) or from a supervised warm start (arm M-pre, loaded
+    with load_mlp_params). tanh -> 0 where the learned sign flips: psi has
+    nodes there, sampled with vanishing weight. Host callback on the INPUT
+    only, once per batch (wraps the whole batched trunk).
+
+    Param tree: {'base': <Combo trunk>, 'mlp': {'Dense_0': {'kernel' (K, hidden),
+    'bias' (hidden,)}, ..., 'Dense_depth': {'kernel' (hidden, 1), 'bias' (1,)}}},
+    K = n_features = N + F; spec in model/sign_mlp_io.mlp_param_spec.
+    """
+
+    base: nn.Module
+    head_features_ex: Any    # QECSignHead.features_ex -- static (host) callable
+    n_features: int          # QECSignHead.n_features_ex (K = N + F)
+    hidden: int = 64
+    depth: int = 2
+
+    @nn.compact
+    def __call__(self, x):
+        log_a = self.base(x)
+        u = jax.pure_callback(
+            lambda xb: np.asarray(self.head_features_ex(xb), dtype=np.float64),
+            jax.ShapeDtypeStruct(x.shape[:-1] + (self.n_features,), jnp.float64),
+            x, vmap_method='expand_dims')
+        t = jnp.tanh(_SignMLP(self.hidden, self.depth, name='mlp')(u))
+        return log_a + jnp.log(jnp.abs(t)) + 1j * jnp.pi * (t < 0).astype(jnp.float64)
+
+
+class TwoBranchModel(nn.Module):
+    """Two-branch arm T (docs/signhead_benchmark_plan.md):
+
+        psi = e^c * A_triv(sigma) + s(sigma) * A_top(sigma),   s = (-1)^{s01} in {+-1},
+
+    two INDEPENDENT positive Combo trunks (scopes 'base_triv' / 'base_top' =>
+    distinct init draws) and one scalar c ('log_mix', init log_mix_init). Stable
+    complex log: with a1 = c + log A_triv, a2 = log A_top, m = max(a1, a2),
+        log psi = m + log|e^{a1-m} + s e^{a2-m}| + 1j*pi*[e^{a1-m} + s e^{a2-m} < 0].
+    At c -> -inf this is exactly SignedModel (the head-only arm: log A_top +
+    1j*pi*s01); c = -3 keeps the trivial branch at ~5% amplitude at step 0.
+    Real params, complex output; the head is a host callback on the input,
+    once per batch (zero gradient by construction).
+    """
+
+    base_triv: nn.Module
+    base_top: nn.Module
+    head_s01: Any            # QECSignHead.s01 -- static (host) callable
+    log_mix_init: float = -3.0
+
+    @nn.compact
+    def __call__(self, x):
+        c = self.param('log_mix',
+                       lambda key: jnp.asarray(self.log_mix_init, dtype=jnp.float64))
+        a1 = self.base_triv(x) + c
+        a2 = self.base_top(x)
+        s01 = jax.pure_callback(
+            lambda xb: np.asarray(self.head_s01(xb), dtype=np.float64),
+            jax.ShapeDtypeStruct(x.shape[:-1], jnp.float64),
+            x, vmap_method='expand_dims')
+        s = 1.0 - 2.0 * s01
+        m = jnp.maximum(a1, a2)
+        w = jnp.exp(a1 - m) + s * jnp.exp(a2 - m)
+        return m + jnp.log(jnp.abs(w)) + 1j * jnp.pi * (w < 0).astype(jnp.float64)
+
+
+def load_mlp_params(params, npz_path):
+    """Return a copy of the MLPSignModel param tree with its 'mlp' subtree
+    replaced by the npz written by scripts/pretrain_sign_mlp.py (arm M-pre).
+    Shapes are asserted against the live tree (model/sign_mlp_io spec)."""
+    import flax
+    from model.sign_mlp_io import load_mlp_npz, nest
+
+    params = flax.core.unfreeze(params)          # mutable deep copy of the tree
+    assert 'mlp' in params, "--mlp_init: the model has no 'mlp' subtree (need --sign_impl mlp)"
+    spec = {f"{layer}/{leaf}": tuple(np.shape(a))
+            for layer, sub in params['mlp'].items() for leaf, a in sub.items()}
+    flat = load_mlp_npz(npz_path, spec)
+    params['mlp'] = {layer: {leaf: jnp.asarray(a, dtype=jnp.float64)
+                             for leaf, a in sub.items()}
+                     for layer, sub in nest(flat).items()}
+    return params
+
+
 # --------------------------------------------------------------------------
 # assembly
 # --------------------------------------------------------------------------
@@ -284,3 +391,15 @@ def create_honeycomb_model(config, geometry) -> nn.Module:
         raise ValueError(f"honeycomb architecture must be Combo or PlainCNN, got {arch!r}")
 
     return Sequential(tuple(sequence))
+
+
+def create_two_branch_model(config, geometry, head):
+    """Arm T: two independent Combo trunks (same config, distinct scopes) +
+    the closed-form head. Returns (model, base) with ``base`` the trivial-branch
+    trunk (either trunk serves the init-only hexflip gate; main.py runs it on
+    both param subtrees 'base_triv' / 'base_top')."""
+    base_triv = create_honeycomb_model(config, geometry)
+    base_top = create_honeycomb_model(config, geometry)
+    model = TwoBranchModel(base_triv, base_top, head.s01,
+                           log_mix_init=float(config.get('mix_init', -3.0)))
+    return model, base_triv

@@ -188,6 +188,24 @@ def main():
                 print(f"[sign head] qec/residual: log psi += i*(pi*s + phi_chi), "
                       f"tie-gated MLP hidden={config.get('res_hidden', 16)} over "
                       f"K={head.n_features} decoder features (zero-init phi)")
+            elif config.get('sign_impl') == 'mlp':
+                # Learned-sign arm M / M-pre: psi = A * tanh(m_theta(eps, x)),
+                # (eps, x) = features_ex (MWPM correction + hexagon-flip vars).
+                from model.honeycomb_networks import MLPSignModel
+                model = MLPSignModel(base_model, head.features_ex, head.n_features_ex,
+                                     hidden=config.get('mlp_hidden', 64),
+                                     depth=config.get('mlp_depth', 2))
+                print(f"[sign head] qec/mlp: psi = A * tanh(MLP(eps, x)), hidden="
+                      f"{config.get('mlp_hidden', 64)} depth={config.get('mlp_depth', 2)} "
+                      f"over K={head.n_features_ex} features"
+                      + (f"; warm start {config['mlp_init']}" if config.get('mlp_init') else
+                         " (random init, arm M)"))
+            elif config.get('sign_impl') == 'twobranch':
+                # Arm T: psi = e^c A_triv + (-1)^s A_top, two independent trunks.
+                from model.honeycomb_networks import create_two_branch_model
+                model, base_model = create_two_branch_model(config, geometry, head)
+                print(f"[sign head] qec/twobranch: psi = e^c A_triv + (-1)^s A_top, "
+                      f"c init {config.get('mix_init', -3.0)} (c -> -inf = head-only arm)")
             else:
                 from model.honeycomb_networks import SignedModel
                 model = SignedModel(base_model, head.s01)
@@ -277,6 +295,12 @@ def main():
             vs = _flax.serialization.from_bytes(vs, f.read())
         print(f"Warm-started from {config['init_params']}")
 
+    # Arm M-pre: replace the 'mlp' subtree with the supervised pre-fit (shapes asserted).
+    if config.get('mlp_init'):
+        from model.honeycomb_networks import load_mlp_params
+        vs.parameters = load_mlp_params(vs.parameters, config['mlp_init'])
+        print(f"Sign MLP warm-started from {config['mlp_init']}")
+
     # Update number of parameters in the data dictionary
     with open(config['filename'], 'r') as f:
         data = json.load(f)
@@ -313,21 +337,26 @@ def main():
             # The gate always runs on the BASE network: the sign head flips
             # log psi by i*pi under hexagon flips BY DESIGN (dressed-operator
             # covariance), so the wrapped model would trivially fail it.
-            gate_model, gate_params = model, vs.parameters
-            if config.get('sign_head', 'none') != 'none' \
-                    and config.get('sign_impl', 'operator') in ('model', 'residual'):
-                gate_model, gate_params = base_model, vs.parameters['base']
+            gates = [(model, vs.parameters)]
+            if config.get('sign_head', 'none') != 'none':
+                impl = config.get('sign_impl', 'operator')
+                if impl in ('model', 'residual', 'mlp'):
+                    gates = [(base_model, vs.parameters['base'])]
+                elif impl == 'twobranch':   # both trunks share the Combo definition
+                    gates = [(base_model, vs.parameters[k]) for k in ('base_triv', 'base_top')]
             clusters = [list(map(int, p)) for p in geometry.plaq_all]
-            dev0 = _check_flip_invariance(gate_model, gate_params, geometry.N,
-                                          clusters, n_configs=32)
-            _rng = np.random.default_rng(1)
-            pert = jax.tree_util.tree_map(
-                lambda x: x + jnp.asarray(
-                    0.05 * _rng.standard_normal(np.shape(x)), dtype=x.dtype),
-                gate_params,
-            )
-            dev1 = _check_flip_invariance(gate_model, pert, geometry.N,
-                                          clusters, n_configs=32)
+            dev0 = dev1 = 0.0
+            for gate_model, gate_params in gates:
+                dev0 = max(dev0, _check_flip_invariance(gate_model, gate_params, geometry.N,
+                                                        clusters, n_configs=32))
+                _rng = np.random.default_rng(1)
+                pert = jax.tree_util.tree_map(
+                    lambda x: x + jnp.asarray(
+                        0.05 * _rng.standard_normal(np.shape(x)), dtype=x.dtype),
+                    gate_params,
+                )
+                dev1 = max(dev1, _check_flip_invariance(gate_model, pert, geometry.N,
+                                                        clusters, n_configs=32))
             print(f"[hexflip invariance] max |Delta log psi|: init {dev0:.2e}, "
                   f"perturbed params {dev1:.2e} (init-only gate; the perturbed "
                   f"value is the approximate-symmetry-breaking scale)")
