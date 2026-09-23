@@ -142,3 +142,22 @@ than the other's on both seeds. Expect the story to be: weak field — T exact,
 M fails, M-pre ≈ T; crossover — T ≤ 1e-3 by the per-config gate, M-pre is the
 open question; polarised — both fine. If M-cold matches T at weak field the
 parity-hardness argument is wrong and that is the headline instead.
+
+## 7. Amendments (2026-09-23)
+
+- **T's ceiling is `T_gate`, not `1−F_s`** (peer-repo observation, adopted):
+  with positive trunks T can realise either sign where `s_head = −1` but only
+  the global sign where `s_head = +1`, so its exact representability ceiling is
+  `T_gate = min_g Σ|ψ_ED|²[s_head=+1 ∧ sign ψ_ED ≠ g]` — report it per cell next
+  to `1−F_s`. (Oracle: at 3D L=2 OBC `T_gate = 0` at all 9 points while
+  `1−F_s(pt2) = 3.6e-2` at h_x=0.8.)
+- **3D deviations (peer, 2×2×3 OBC, N=20):** ε from the `linear` decoder (pt2
+  commits to no single recovery); `x` = plaquette pair-move bits + 8 star bits
+  (needed for injectivity in 3D); heads in-model as tables (no host callback);
+  optimizer = the 3D recipe (dense SR, cosine dt 0.02→0.002, ds 1e-3, 300
+  steps), identical across arms. 2D and 3D panels are separate experiments.
+- **Adversarial review gate (user rule):** before ANY experiment submission,
+  2–3 independent agents attack the stack — (i) physics/feature encoding and
+  arm-M blindness to ED signs, (ii) JAX/flax wiring + checkpoint rebuild,
+  (iii) grading fairness (identical hyperparameters, labels/anchor conventions,
+  summary/notebook on fixtures). Fixes land before the smoke → runs sequence.
