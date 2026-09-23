@@ -175,3 +175,15 @@ parity-hardness argument is wrong and that is the headline instead.
   arm-M blindness to ED signs, (ii) JAX/flax wiring + checkpoint rebuild,
   (iii) grading fairness (identical hyperparameters, labels/anchor conventions,
   summary/notebook on fixtures). Fixes land before the smoke → runs sequence.
+
+- **Per-sector mix (2026-09-24, attacker-1 finding):** the exact ceilings say the
+  better sign of a single mix scalar flips cell by cell (2×2: `h_z=0` column wants
+  `a<0` — exact at (1.2,0), 8× better at (0.8,0); `h_z>0` columns want `a>0` by
+  20–100×), and a scalar can only change sign by passing through the head-only
+  point. Arm T therefore carries one signed scalar per head sector,
+  `ψ = a_{s(σ)}·A_triv + s·A_top`, `mix = [a₊, a₋]`, both init +0.05: no sector
+  is pinned, ceiling = min(T_gate_plus, T_gate_minus) per sector.
+- **Arm-M init = positive ansatz (same review):** lecun init gave a random-sign
+  state at step 0 (34% minority sign, 16% of configs suppressed >10×) — a handicap
+  unrelated to the question. The last MLP layer is zero-kernel / bias +1, so M
+  starts at `A·tanh(1)` (no sign information) and M-pre's npz overrides it.

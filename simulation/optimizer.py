@@ -399,7 +399,7 @@ def run_minsr(
                   f"(||dtheta|| = {dtheta_norm}) -- energy {E.mean}", flush=True)
         # two-branch arm T: the signed mix scalar a ('mix'), per step (cheap)
         mix = vstate.parameters.get('mix') if hasattr(vstate.parameters, 'get') else None
-        mix = float(np.asarray(mix).reshape(())) if mix is not None else None
+        mix = [float(v) for v in np.asarray(mix).reshape(-1)] if mix is not None else None
 
         update_data(filename, [
             "iters", "energy", "energy_eom", "energy_var", "tau_corr",

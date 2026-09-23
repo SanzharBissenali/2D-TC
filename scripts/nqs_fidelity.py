@@ -169,10 +169,23 @@ def build_vstate(cfg, geometry, head):
     return vs, model
 
 
-def two_branch_head_stripped_fidelity(cfg, geometry, psi_ed, params, N):
+def head_sign_pm1_all(head, N, batch=1 << 17):
+    """Decoded head sign s in {+-1} over all 2^N configs (ED bit order)."""
+    dim = 1 << N
+    site = np.arange(N, dtype=np.int64)
+    out = np.empty(dim, dtype=np.float64)
+    for lo in range(0, dim, batch):
+        idx = np.arange(lo, min(lo + batch, dim), dtype=np.int64)
+        spins = (1 - 2 * ((idx[:, None] >> site) & 1)).astype(np.float64)
+        out[lo:lo + len(idx)] = 1.0 - 2.0 * np.asarray(head.s01(spins))
+    return out
+
+
+def two_branch_head_stripped_fidelity(cfg, geometry, psi_ed, params, N, s_pm):
     """arm T's F_trunk analogue: force the head sign s -> +1 AND drop the sign
     of the mix (keep both branch amplitudes), i.e. fidelity of the positive
-    state |a| e^{a1-m} + e^{a2-m} (a1 = log A_triv, a2 = log A_top,
+    state |a_s| e^{a1-m} + e^{a2-m} (a1 = log A_triv, a2 = log A_top, a_s the
+    per-sector mix selected by the head sign s_pm,
     m = max(a1,a2)) against psi_ED. Evaluates the two bare Combo trunks separately (same
     module definition, different param subtrees -- flax modules are
     stateless) since TwoBranchModel's own forward always applies the true
@@ -183,7 +196,9 @@ def two_branch_head_stripped_fidelity(cfg, geometry, psi_ed, params, N):
     a1 = np.real(enumerate_logs(bare, {'params': params['base_triv']}, N))
     a2 = np.real(enumerate_logs(bare, {'params': params['base_top']}, N))
     m = np.maximum(a1, a2)
-    psi_hs = (abs(float(params['mix'])) * np.exp(a1 - m)
+    mix = np.asarray(params['mix']).reshape(-1)
+    a_abs = np.abs(np.where(s_pm > 0, mix[0], mix[-1]))
+    psi_hs = (a_abs * np.exp(a1 - m)
               + np.exp(a2 - m)).astype(np.complex128)
     psi_hs /= np.linalg.norm(psi_hs)
     return float(abs(np.vdot(psi_ed, psi_hs)) ** 2)
@@ -317,9 +332,9 @@ def main():
                 # arm T's own F_trunk analogue (head stripped: s -> +1, |a|)
                 # and the trained signed mix a, both read straight from the
                 # loaded checkpoint's params.
-                mix = float(vs.parameters['mix'])
+                mix = [float(v) for v in np.asarray(vs.parameters['mix']).reshape(-1)]
                 F_trunk = two_branch_head_stripped_fidelity(
-                    cfg, g, psi_ed, vs.parameters, N)
+                    cfg, g, psi_ed, vs.parameters, N, head_sign_pm1_all(head, N))
 
             # SELF-CHECK: <H> from the enumerated state vs the run's tail
             e_chk = float(np.real(np.vdot(psi, H @ psi)))
@@ -338,7 +353,7 @@ def main():
             })
             print(f"  {token:22s} F={F:.6f}"
                   + (f" F_trunk={F_trunk:.6f}" if F_trunk is not None else "")
-                  + (f" mix={mix:.4f}" if mix is not None else "")
+                  + (f" mix={mix}" if mix is not None else "")
                   + f" E_chk={e_chk:.5f} E_run={e_run:.5f} dE={de:.2e} "
                   + ("OK" if ok else "ENERGY-CHECK-FAIL"), flush=True)
         del H, psi_ed

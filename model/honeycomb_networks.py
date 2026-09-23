@@ -248,7 +248,12 @@ class _SignMLP(nn.Module):
         h = 2.0 * u - 1.0
         for _ in range(self.depth):
             h = nn.tanh(nn.Dense(self.hidden, param_dtype=jnp.float64)(h))
-        return nn.Dense(1, param_dtype=jnp.float64)(h)[..., 0]
+        # Last layer zero-kernel / bias +1: step 0 is the POSITIVE ansatz
+        # (tanh(1) on every config, no sign information), not a random-sign
+        # state (review 2026-09-24: lecun init gave 34% minority signs at init).
+        return nn.Dense(1, param_dtype=jnp.float64,
+                        kernel_init=nn.initializers.zeros,
+                        bias_init=nn.initializers.constant(1.0))(h)[..., 0]
 
 
 class MLPSignModel(nn.Module):
@@ -290,19 +295,21 @@ class MLPSignModel(nn.Module):
 class TwoBranchModel(nn.Module):
     """Two-branch arm T (docs/signhead_benchmark_plan.md):
 
-        psi = a * A_triv(sigma) + s(sigma) * A_top(sigma),   s = (-1)^{s01} in {+-1},
+        psi = a_{s} * A_triv(sigma) + s(sigma) * A_top(sigma),   s = (-1)^{s01} in {+-1},
 
     two INDEPENDENT positive Combo trunks (scopes 'base_triv' / 'base_top' =>
-    distinct init draws) and one SIGNED real scalar a ('mix', init mix_init).
-    Stable complex log: with a1 = log A_triv, a2 = log A_top, m = max(a1, a2),
-        w = a e^{a1-m} + s e^{a2-m},
+    distinct init draws) and TWO signed real scalars ('mix' = [a_+, a_-], both
+    init mix_init), one per head sector. Stable complex log: with a1 = log A_triv,
+    a2 = log A_top, m = max(a1, a2),
+        w = a_s e^{a1-m} + s e^{a2-m},
         log psi = m + log|w| + 1j*pi*[w < 0]
     (a stays O(1) OUTSIDE the max/log, so a = 0 and a < 0 are both valid).
-    a = 0 is exactly SignedModel (the head-only arm: log A_top + 1j*pi*s01);
-    a > 0 lets the trivial branch overrule the head only where s = -1 (the
-    s = +1 sector is pinned to the global sign), a < 0 swaps which head-sector
-    is flippable (s = +1 becomes the flippable one); mix_init = +0.05 keeps the
-    trivial branch at ~5% amplitude at step 0. Real params, complex output; the
+    a_+ = a_- = 0 is exactly SignedModel (the head-only arm). A single signed
+    scalar pins one head sector to the global sign (a > 0: the s = +1 sector;
+    a < 0: the s = -1 sector) and the exact ceilings say the better sign flips
+    cell by cell (review 2026-09-24: h_z = 0 wants a < 0, h_z > 0 wants a > 0),
+    so each sector gets its own scalar and no sector is pinned. mix_init =
+    +0.05 keeps the trivial branch at ~5% amplitude at step 0. Real params, complex output; the
     head is a host callback on the input, once per batch (zero gradient by
     construction).
     """
@@ -314,8 +321,8 @@ class TwoBranchModel(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        a = self.param('mix',
-                       lambda key: jnp.asarray(self.mix_init, dtype=jnp.float64))
+        mix = self.param('mix',
+                         lambda key: jnp.full((2,), self.mix_init, dtype=jnp.float64))
         a1 = self.base_triv(x)
         a2 = self.base_top(x)
         s01 = jax.pure_callback(
@@ -323,6 +330,7 @@ class TwoBranchModel(nn.Module):
             jax.ShapeDtypeStruct(x.shape[:-1], jnp.float64),
             x, vmap_method='expand_dims')
         s = 1.0 - 2.0 * s01
+        a = jnp.where(s > 0, mix[0], mix[1])      # per-sector mix a_{s(sigma)}
         m = jnp.maximum(a1, a2)
         w = a * jnp.exp(a1 - m) + s * jnp.exp(a2 - m)
         return m + jnp.log(jnp.abs(w)) + 1j * jnp.pi * (w < 0).astype(jnp.float64)

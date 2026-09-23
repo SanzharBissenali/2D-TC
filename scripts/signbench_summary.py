@@ -305,7 +305,8 @@ def main():
             print(f"{r['hx']:5.2f} {r['hz']:5.2f} {ARM_LABEL[r['arm']]:>6} "
                   f"{r['seed']:>4} {'MISSING':>15}")
             continue
-        lm = f"{r['mix']:8.4f}" if r.get("mix") is not None else f"{'':>8}"
+        lm = (("%8s" % "/".join(f"{v:.3f}" for v in (r['mix'] if isinstance(r['mix'], list) else [r['mix']])))
+              if r.get("mix") is not None else f"{'':>8}")
         omf = f"{r['one_minus_F']:10.3e}" if r["one_minus_F"] is not None else f"{'?':>10}"
         if r["ceiling"] is None:
             ceil = f"{'?':>17}"
