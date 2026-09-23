@@ -23,7 +23,7 @@ serves those 6 heatmaps.
 ## 1. The three arms (identical information, identical everything else)
 
 Shared: positive real Combo trunk `A(σ)` (2D Phase-3 recipe: minSR lr 0.01,
-ds 1e-4, 350 steps, 8192 samples, seed 0 + one replica seed); deterministic
+ds 6e-5, 350 steps, 8192 samples, seed 0 + one replica seed); deterministic
 feature map `σ → (ε, x)`: `Q_v` syndrome → MWPM (pymatching, production
 tie-break) → `ε` → `r = σ⊕ε` → `x = G⁻¹ r` over GF(2) (precomputed
 pseudo-inverse of the hexagon mask, unique on the simply-connected patch).

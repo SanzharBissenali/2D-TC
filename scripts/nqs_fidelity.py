@@ -5,8 +5,8 @@ from the run's sim_params, loads the .mpack into a structurally identical
 MCState (main.py's warm-start pattern), evaluates log psi on ALL 2^N
 configurations (GPU batches, ED bit convention: site i <-> bit i, bit 1 =
 spin DOWN, all-up = index 0), applies the run's decoder sign where the sign
-lives in the OPERATOR frame (cnnqB/cnnqC arms; cnnqR's model already carries
-its sign; cnn/cnnc/plaincnn have none), and reports
+lives in the OPERATOR frame (cnnqB/cnnqC arms; cnnqR/cnnqM/cnnqMp/cnnqT's
+model already carries its own sign; cnn/cnnc/plaincnn have none), and reports
 
     F        = |<psi_ED | s * psi_trunk>|^2 / norms   (the physical fidelity)
     F_trunk  = |<psi_ED | psi_trunk>|^2 / norms       (head contribution probe)
@@ -17,6 +17,16 @@ rebuild or parameter load fails this check loudly instead of producing a
 plausible-looking fidelity. Runs on a GPU node (jax forward passes) with the
 ED memory profile of jobs/nersc_signfid.sh.
 
+Learned-sign-benchmark arms (docs/signhead_benchmark_plan.md): cnnqM (arm M,
+random-init sign MLP), cnnqMp (arm M-pre; STRUCTURALLY identical to cnnqM --
+the .mpack already carries the supervised-pretrained-then-VMC-trained 'mlp'
+subtree, so --mlp_init must NOT be re-applied here, only the checkpoint's own
+values matter), cnnqT (arm T, two-branch mix). All three carry their own sign
+in the model's complex log psi (like cnnqR), so the generic F/F_trunk=None
+path applies; cnnqT additionally reports a HEAD-STRIPPED F_trunk (s forced to
++1, i.e. fidelity of e^{a1-m}+e^{a2-m} alone against psi_ED -- the two-branch
+analogue of "fidelity without the head's sign") and the trained log-mix c.
+
 Example:
     PYTHONPATH=. python scripts/nqs_fidelity.py --Lx 2 --Ly 3 --hy 0.4 \
         --points "0,0;0.4,0" --arms cnnqC,cnnqC_anchor \
@@ -26,6 +36,7 @@ Example:
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 import time
@@ -41,11 +52,20 @@ from scripts.sign_fidelity import (loop_sign_table,              # noqa: E402
                                    decoder_signs)
 
 # arm token -> (base trunk, complex?, sign source). decoder comes from the
-# token suffix (or 'mwpm'); 'operator' arms get the sign applied here.
+# token suffix (or 'mwpm'); 'operator' arms get the sign applied here; every
+# other non-'none' source already carries its sign in the model's own
+# complex log psi (decoder suffixes are meaningless there -- see the
+# --decoder guard in main()).
 ARM_BASE = {
     'cnnqB': ('combo', False, 'operator'),
     'cnnqC': ('combo', True, 'operator'),
     'cnnqR': ('combo', False, 'model'),   # ResidualSignedModel carries the sign
+    'cnnqM': ('combo', False, 'mlp'),     # arm M: MLPSignModel, random init
+    'cnnqMp': ('combo', False, 'mlp'),    # arm M-pre: same structure; the
+                                          # checkpoint already carries the
+                                          # supervised pre-fit (never re-apply
+                                          # --mlp_init here)
+    'cnnqT': ('combo', False, 'twobranch'),  # arm T: TwoBranchModel
     'cnn': ('combo', False, 'none'),
     'cnnc': ('combo', True, 'none'),
     'plaincnn': ('plain', False, 'none'),
@@ -53,12 +73,23 @@ ARM_BASE = {
 DEC_NAMES = ('anchor', 'greedy', 'unionfind', 'tie_sum', 'mwpm')
 
 
+_SEED_SUFFIX_RE = re.compile(r'_s\d+$')
+
+
 def parse_arm(token):
+    """(base, decoder). A trailing "_s<seed>" (jobs/nersc_signbench.sh's
+    seed-1-replica jobid convention -- seed 0 is never suffixed, so this is
+    a no-op for every token used before that script existed) is stripped
+    ONLY for this base/decoder match; ``token`` itself (used verbatim for
+    the checkpoint filename and recorded as-is in the output) is untouched,
+    so e.g. 'cnnqM_s1' -> ('cnnqM', 'mwpm') and 'cnnqB_greedy_s1' ->
+    ('cnnqB', 'greedy')."""
+    stem = _SEED_SUFFIX_RE.sub('', token, count=1)
     for base in sorted(ARM_BASE, key=len, reverse=True):
-        if token == base:
+        if stem == base:
             return base, 'mwpm'
-        if token.startswith(base + '_'):
-            dec = token[len(base) + 1:]
+        if stem.startswith(base + '_'):
+            dec = stem[len(base) + 1:]
             assert dec in DEC_NAMES, f"unknown decoder suffix in {token!r}"
             return base, dec
     raise ValueError(f"unknown arm token {token!r}")
@@ -98,10 +129,17 @@ def run_config(base, is_complex, hx, hz, hy, sp):
         'n_samples': 8192, 'n_chains': 1024, 'n_discard': 8,
         'chunk_size': 2048, 'n_sweeps': 512, 'seed': 0,
         'res_hidden': _sp(sp, 'res_hidden', 16),
+        'mlp_hidden': _sp(sp, 'mlp_hidden', 64),
+        'mlp_depth': _sp(sp, 'mlp_depth', 2),
+        'mix_init': _sp(sp, 'mix_init', -3.0),
     }
 
 
 def build_vstate(cfg, geometry, head):
+    """(vstate, model) for one arm. ``model`` is the network actually wired
+    into ``vs`` (used by enumerate_logs); the base Combo trunk lives at
+    vs.parameters['base'] (mlp/model/residual arms) or
+    vs.parameters['base_triv']/['base_top'] (twobranch)."""
     import flax
     import netket as nk
     from model.honeycomb_networks import create_honeycomb_model
@@ -109,15 +147,46 @@ def build_vstate(cfg, geometry, head):
 
     hi = nk.hilbert.Spin(s=1 / 2, N=geometry.N)
     model = create_honeycomb_model(cfg, geometry)
-    if cfg.get('_sign_source') == 'model':
+    src = cfg.get('_sign_source')
+    if src == 'model':
         from model.honeycomb_networks import ResidualSignedModel
         model = ResidualSignedModel(model, head.features, head.n_features,
                                     hidden=cfg['res_hidden'])
+    elif src == 'mlp':
+        # arms M / M-pre: STRUCTURALLY identical (same hidden/depth); the
+        # checkpoint's own 'mlp' subtree already reflects whichever init +
+        # training the run used -- no --mlp_init reapplication here.
+        from model.honeycomb_networks import MLPSignModel
+        model = MLPSignModel(model, head.features_ex, head.n_features_ex,
+                             hidden=cfg['mlp_hidden'], depth=cfg['mlp_depth'])
+    elif src == 'twobranch':
+        from model.honeycomb_networks import create_two_branch_model
+        model, _ = create_two_branch_model(cfg, geometry, head)
     sa = create_custom_sampler(geometry, hi, cfg)
     vs = nk.vqs.MCState(sa, model, n_samples=cfg['n_samples'],
                         n_discard_per_chain=cfg['n_discard'],
                         chunk_size=cfg['chunk_size'], seed=cfg['seed'])
     return vs, model
+
+
+def two_branch_head_stripped_fidelity(cfg, geometry, psi_ed, params, N):
+    """arm T's F_trunk analogue: force the head sign s -> +1 (drop the
+    oscillating sign, keep both branches), i.e. fidelity of
+    e^{a1-m} + e^{a2-m} (a1 = c + log A_triv, a2 = log A_top, m = max(a1,a2))
+    against psi_ED. Evaluates the two bare Combo trunks separately (same
+    module definition, different param subtrees -- flax modules are
+    stateless) since TwoBranchModel's own forward always applies the true
+    decoded sign."""
+    from model.honeycomb_networks import create_honeycomb_model
+
+    bare = create_honeycomb_model(cfg, geometry)
+    a1 = np.real(enumerate_logs(bare, {'params': params['base_triv']}, N)) \
+        + float(params['log_mix'])
+    a2 = np.real(enumerate_logs(bare, {'params': params['base_top']}, N))
+    m = np.maximum(a1, a2)
+    psi_hs = (np.exp(a1 - m) + np.exp(a2 - m)).astype(np.complex128)
+    psi_hs /= np.linalg.norm(psi_hs)
+    return float(abs(np.vdot(psi_ed, psi_hs)) ** 2)
 
 
 def enumerate_logs(model, variables, N, batch=1 << 17):
@@ -200,6 +269,11 @@ def main():
         for token in arms:
             base, dec = parse_arm(token)
             trunk, is_c, sign_src = ARM_BASE[base]
+            assert sign_src == 'operator' or dec == 'mwpm', (
+                f"{token}: decoder suffixes only apply to the 'operator' "
+                f"arms (cnnqB/cnnqC) -- {sign_src} arms carry a fixed mwpm "
+                f"head baked into the checkpoint"
+            )
             name = f"hc{args.Lx}x{args.Ly}_ds_hx{hx:g}_hz{hz:g}{hyseg}_{token}"
             path = f"results/nqs/G-equiv_1_{name}"
             if not os.path.exists(path + ".mpack") and hx == hz == args.hy == 0:
@@ -238,6 +312,14 @@ def main():
             F = float(abs(np.vdot(psi_ed, psi)) ** 2)
             F_trunk = float(abs(np.vdot(psi_ed, psi_t)) ** 2) \
                 if sign_src == 'operator' else None
+            log_mix = None
+            if sign_src == 'twobranch':
+                # arm T's own F_trunk analogue (head stripped: s -> +1) and
+                # the trained log-mix c, both read straight from the loaded
+                # checkpoint's params.
+                log_mix = float(vs.parameters['log_mix'])
+                F_trunk = two_branch_head_stripped_fidelity(
+                    cfg, g, psi_ed, vs.parameters, N)
 
             # SELF-CHECK: <H> from the enumerated state vs the run's tail
             e_chk = float(np.real(np.vdot(psi, H @ psi)))
@@ -248,13 +330,15 @@ def main():
             ok = de < max(0.02 * abs(evals[0]), 0.05)
             records.append({
                 'hx': hx, 'hz': hz, 'hy': args.hy, 'arm': token,
-                'F': F, 'F_trunk': F_trunk, 'E0': float(evals[0]),
+                'F': F, 'F_trunk': F_trunk, 'log_mix': log_mix,
+                'E0': float(evals[0]),
                 'E_check': e_chk, 'E_run_tail': e_run, 'dE': de,
                 'energy_check_ok': bool(ok),
                 't_eval_s': time.time() - t1,
             })
             print(f"  {token:22s} F={F:.6f}"
                   + (f" F_trunk={F_trunk:.6f}" if F_trunk is not None else "")
+                  + (f" log_mix={log_mix:.4f}" if log_mix is not None else "")
                   + f" E_chk={e_chk:.5f} E_run={e_run:.5f} dE={de:.2e} "
                   + ("OK" if ok else "ENERGY-CHECK-FAIL"), flush=True)
         del H, psi_ed
