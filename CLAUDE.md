@@ -929,6 +929,50 @@ study of DS or any twisted quantum double ⇒ novel. Phases: 1 ground truth (DON
   positional path (`eval(sys.argv[...])`) and dies with a confusing NameError — always
   pass full flag sets.
 
+## Current work — learned-vs-gated sign head benchmark (branch `learned-sign-head`, 2026-09-18→)
+Question: can a TRAINABLE neural sign head (MLP on engineered features) replace/beat the
+deterministic QEC head, and does a gated head survive the polarised regime? Full spec + amendments:
+`docs/signhead_benchmark_plan.md`. NORTH STAR = two 3×3 (hx,hz) heatmaps per model (rel-err, exact
+fidelity) × 3 arms, 2D DS 2×3 (this repo) + 3D fTC 2×2×3 (peer repo `toric-code-nqs-fsign`, branch
+`feat/signhead-bench`, exports `results/diagnostics/signbench_3d.json` in notebook 07's schema).
+- **Oracle facts (training-free exact ceilings F_φ = Σ_classes max(W⁺,W⁻), session scratchpad):**
+  syndrome-only features carry NO sign info (== positive ansatz to 5e-13); the on-support sign is the
+  Levin–Gu Z·CZ·CCZ cubic in hexagon-flip vars x (== χ(D) mod 2; verified 1×2..4×4) — closed form,
+  no NN needed; "cheap linear decoder + local NN correction" REFUTED (anchor's error is non-local;
+  ceilings only drop when φ≈σ); potential vars x no more economical than raw links; sum-pooled additive
+  phase residual gains ~nothing; tie-cycle features (s_A,s_B,ε_A⊕ε_B,r on cycle; 230 classes) beat
+  MWPM 6×–10⁴× (only pays in 3D). Strong field: best global head/no-head switch leaves a 1.9e-2 (2D
+  2×2, hx*≈1.09) / 1.1e-2 (3D 2×2×3, hx*≈0.57, deepening with size) hole; defect-count gates don't
+  fill it; ideal per-config keep/drop of the head leaves ≤2.6e-4 (3D) ⇒ true crossover sign ≈ head
+  sign kept/dropped per configuration.
+- **Arms (identical trunk/optimizer/sampler/steps/seed; Phase-3 recipe minSR lr 0.01 ds 6e-5 350 steps,
+  `--minsr_mode complex`):** `cnnqM` ψ=A·tanh(MLP(ε,x)) (MLP N+F→64→64→1, positive-ansatz init:
+  zero last kernel, bias +1), `cnnqMp` = same with `--mlp_init` npz pre-fit to ED signs at the SAME
+  point (|ψ|²-weighted BCE, best epoch kept; `scripts/pretrain_sign_mlp.py`, `jobs/nersc_pretrain.sh`,
+  outputs `results/pretrain/`), `cnnqT` ψ = a_{s(σ)}·A_triv + s_head·A_top (two independent Combo
+  trunks + per-head-sector signed scalars `mix=[a₊,a₋]` init +0.05; head = MWPM + closed form). All
+  three = real params, complex log ψ, in-model head (host callback in the sampler; NOT frameable as
+  SHS). Code: `model/sign_head.features_ex/x_of_r/poly_sign01`, `model/honeycomb_networks.
+  MLPSignModel/TwoBranchModel/load_mlp_params`, `model/sign_mlp_io.py` (npz contract), flags
+  `--sign_impl {mlp,twobranch} --mlp_hidden --mlp_depth --mlp_init --mix_init`.
+- **Ceilings:** M/M-pre = 0 ((ε,x) is a lossless encoding of σ — verified on all 2^19 configs);
+  T = `T_gate` = min over sectors of min_g Σ|ψ|²[s=±1 ∧ sign ψ≠g] (NOT 1−F_s; keys `T_gate_plus/
+  minus/T_gate/T_gate_branch` now in `sign_fidelity.py` output; the better sign flips cell by cell —
+  hz=0 wants a<0, hz>0 wants a>0 — hence the per-sector mix).
+- **Grading:** `scripts/signbench_summary.py` (rel-err, 1−F, ceiling, n_params, prior column, mix),
+  `analysis/07_signbench_heatmaps.ipynb`; fidelity arms `cnnqM/cnnqMp/cnnqT` in `nqs_fidelity.py`
+  (+ `_s<seed>` suffix). Verdict rule: ≥3× lower 1−F on both seeds.
+- **Gotchas found by the 3-attacker review (all fixed):** arm-M all-up config has ALL-ZERO features
+  ⇒ m=0 exactly under zero-bias init ⇒ ψ=0 node at the anchor (fixed: ±1 recentring inside `_SignMLP`);
+  pretrain saved final not best epoch; T_gate unimplemented; no param counts (T has 2 trunks ≈1.5× M);
+  awk `%g` corrupts decimals under a comma locale (`LC_ALL=C`); `statistics.pstdev` raises on NaN.
+  Complex-output arms cost 2.6–3.2× cnnqB per step at N=11 (complex-QGT tax, not the head) ⇒ measure
+  s/step at 2×3 before trusting chunk walltimes.
+- **Rule (user, 2026-09-23):** NO local training/smoke and no local netket install — smoke on debug QOS
+  or very short submits only. Before any experiment submission: 2–3 independent adversarial agents.
+- **Status (2026-09-24 overnight, user autonomy):** post-fix smoke + 2×3 timing smoke on debug,
+  9-point sign_fidelity (T_gate) + 2×3 pretraining on regular; production 27 runs + fidelities follow.
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the
