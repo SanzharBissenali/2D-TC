@@ -15,12 +15,21 @@ points and Sec 1 arms), prints one row per (point, arm, seed) with:
     rel-err   |E_tail - E0| / |E0|                    (E0 from load_refs())
     1-F       1 - fidelity, from results/diagnostics/fidelity_*.json
               (scripts/nqs_fidelity.py output; F = |<psi_ED|psi_NQS>|^2)
-    ceiling   1 - F_s of the mwpm head (signfid JSONs) for arm T; EXACTLY 0
-              for M / M-pre ((eps, x) = features_ex determines sigma
-              bijectively, so there is no head information loss to floor
-              against -- see docs/signhead_benchmark_plan.md Sec 6)
+    ceiling   arm T: T_gate (plan Sec 7 -- min over the pinned head-sector
+              of the ED weight on the wrong global sign; signfid JSONs) when
+              the signfid JSON carries it, else 1 - F_s of the mwpm head
+              flagged '(1-Fs)' in the table / ceiling_kind '1-Fs' in the
+              JSON; EXACTLY 0 for M / M-pre ((eps, x) = features_ex
+              determines sigma bijectively, so there is no head information
+              loss to floor against -- see docs/signhead_benchmark_plan.md Sec 6)
     std       tail energy std (convergence signal; large => not converged)
-    log_mix   trained log-mix c (arm T only; blank for M/M-pre)
+    mix       trained signed mix a (arm T only; blank for M/M-pre)
+    n_params  the run's parameter count (sim_params.n_params of the run JSON)
+    prior     what the sign started from (fairness column): cnnqM 'random';
+              cnnqMp 'ED-pretrained@point (warm 1-Fs=<best>)' with <best>
+              read from results/pretrain/mlp_hc<size>_hx<hx:g>_hz<hz:g>_
+              h<hidden>d<depth>.json (best_1_minus_Fs; '?' if absent);
+              cnnqT 'head-only init (mix=<mix_init>)'
 
 A run is "missing" if its --Lx/--Ly/hx/hz/arm/seed=0 checkpoint json isn't
 in --dir (still printed, flagged, never silently dropped -- ftc_summary.py's
@@ -112,9 +121,11 @@ def load_runs(run_dir):
 
 
 def load_fidelity(diag_dir):
-    """(size, hx, hz, arm, seed) -> {'F', 'F_trunk', 'log_mix'} from every
+    """(size, hx, hz, hy, arm, seed) -> {'F', 'F_trunk', 'mix'} from every
     results/diagnostics/fidelity_*.json (scripts/nqs_fidelity.py output;
-    'arm' in each record is the raw --arms token, e.g. 'cnnqM_s1')."""
+    'arm' in each record is the raw --arms token, e.g. 'cnnqM_s1'). hy is
+    part of the key so a hy != 0 record can never shadow the hy = 0 run
+    (this benchmark is hy = 0 only; records default hy to 0 if absent)."""
     fid = {}
     for f in glob.glob(os.path.join(diag_dir, "fidelity_*.json")):
         d = json.load(open(f))
@@ -127,13 +138,41 @@ def load_fidelity(diag_dir):
             if arm not in ARMS:
                 continue
             key = (size, round(float(r["hx"]), 6), round(float(r["hz"]), 6),
-                   arm, seed)
+                   round(float(r.get("hy", 0.0)), 6), arm, seed)
             fid[key] = {"F": r.get("F"), "F_trunk": r.get("F_trunk"),
-                        "log_mix": r.get("log_mix")}
+                        "mix": r.get("mix")}
     return fid
 
 
-def build_records(size, points, arms, runs, fid, refs, tail):
+def _sim_param(d, key, default=None):
+    """sim_params values are 1-element lists in the run JSON."""
+    v = d.get("sim_params", {}).get(key, default)
+    return v[0] if isinstance(v, list) and len(v) == 1 else v
+
+
+def _prior(arm, d, size, hx, hz, pretrain_dir):
+    """Fairness column: what the sign was initialised from (see module doc)."""
+    if arm == 'cnnqM':
+        return "random", None
+    if arm == 'cnnqT':
+        return f"head-only init (mix={_sim_param(d, 'mix_init', 0.05):g})", None
+    if arm == 'cnnqMp':
+        hidden, depth = _sim_param(d, 'mlp_hidden', 64), _sim_param(d, 'mlp_depth', 2)
+        pj = os.path.join(pretrain_dir,
+                          f"mlp_hc{size}_hx{hx:g}_hz{hz:g}_h{hidden}d{depth}.json")
+        warm = None
+        if os.path.exists(pj):
+            pd = json.load(open(pj))
+            warm = pd.get("best_1_minus_Fs", pd.get("min_1_minus_Fs",
+                                                     pd.get("final_1_minus_Fs")))
+        return (f"ED-pretrained@point (warm 1-Fs="
+                f"{warm:.2e})" if warm is not None else
+                "ED-pretrained@point (warm 1-Fs=?)"), warm
+    return None, None
+
+
+def build_records(size, points, arms, runs, fid, refs, tail,
+                  pretrain_dir="results/pretrain"):
     """One record per (point, arm, seed present in runs/fid); seed 0 is
     always emitted (missing=True if no checkpoint), extra seeds only if
     found on disk."""
@@ -141,6 +180,7 @@ def build_records(size, points, arms, runs, fid, refs, tail):
     for hx, hz in points:
         ref = refs.get((size, hx, hz), {})
         e0, f_s = ref.get("E0"), ref.get("F_s")
+        t_gate = ref.get("T_gate")
         for arm in arms:
             seeds = {0} | {s for (sz, hhx, hhz, a, s) in runs
                           if (sz, hhx, hhz, a) == (size, hx, hz, arm)}
@@ -155,23 +195,41 @@ def build_records(size, points, arms, runs, fid, refs, tail):
                        "E_tail": None, "E_tail_std": None, "Vscore_tail": None,
                        "nan_tail": False, "E0": e0, "rel_err": None,
                        "F": None, "F_trunk": None, "one_minus_F": None,
-                       "ceiling": None, "log_mix": None}
+                       "ceiling": None, "ceiling_kind": None, "mix": None,
+                       "n_params": None, "prior": None, "warm_1mFs": None}
                 if path is None:
                     records.append(rec)
                     continue
                 e_med, e_std, v_med, nan = _tail_stats(path, tail)
                 rel_err = (abs(e_med - e0) / abs(e0)
                           if e_med is not None and e0 not in (None, 0) else None)
-                fr = fid.get(key, {})
+                fr = fid.get((size, hx, hz, 0.0, arm, seed), {})
                 one_minus_f = (1.0 - fr["F"]) if fr.get("F") is not None else None
-                ceiling = (1.0 - f_s if (arm == 'cnnqT' and f_s is not None)
-                          else (0.0 if arm in ('cnnqM', 'cnnqMp') else None))
+                if arm == 'cnnqT':
+                    # plan Sec 7: T's ceiling is T_gate; fall back to the
+                    # mwpm 1-F_s (flagged) on signfid JSONs predating it
+                    if t_gate is not None:
+                        ceiling, ceiling_kind = t_gate, "T_gate"
+                    elif f_s is not None:
+                        ceiling, ceiling_kind = 1.0 - f_s, "1-Fs"
+                    else:
+                        ceiling, ceiling_kind = None, None
+                elif arm in ('cnnqM', 'cnnqMp'):
+                    ceiling, ceiling_kind = 0.0, "exact-0"
+                else:
+                    ceiling, ceiling_kind = None, None
+                d = json.load(open(path))
+                n_params = _sim_param(d, "n_params")
+                prior, warm = _prior(arm, d, size, hx, hz, pretrain_dir)
                 rec.update({
                     "E_tail": e_med, "E_tail_std": e_std, "Vscore_tail": v_med,
                     "nan_tail": nan, "E0": e0, "rel_err": rel_err,
                     "F": fr.get("F"), "F_trunk": fr.get("F_trunk"),
                     "one_minus_F": one_minus_f, "ceiling": ceiling,
-                    "log_mix": fr.get("log_mix") if arm == 'cnnqT' else None,
+                    "ceiling_kind": ceiling_kind,
+                    "mix": fr.get("mix") if arm == 'cnnqT' else None,
+                    "n_params": int(n_params) if n_params is not None else None,
+                    "prior": prior, "warm_1mFs": warm,
                 })
                 records.append(rec)
     return records
@@ -220,6 +278,8 @@ def main():
     ap.add_argument("--dir", default="results/nqs")
     ap.add_argument("--diag_dir", default="results/diagnostics")
     ap.add_argument("--tail", type=int, default=20)
+    ap.add_argument("--pretrain_dir", default="results/pretrain",
+                    help="scripts/pretrain_sign_mlp.py JSONs (M-pre warm-start 1-Fs)")
     ap.add_argument("--out", default=None, help="optional JSON dump for "
                     "analysis/07_signbench_heatmaps.ipynb")
     args = ap.parse_args()
@@ -232,25 +292,31 @@ def main():
     refs = load_refs()
     runs = load_runs(args.dir)
     fid = load_fidelity(args.diag_dir)
-    records = build_records(size, points, arms, runs, fid, refs, args.tail)
+    records = build_records(size, points, arms, runs, fid, refs, args.tail,
+                            pretrain_dir=args.pretrain_dir)
     vdicts = verdicts(records)
 
     print(f"\n=== signbench hc{size} (ds) ===")
     print(f"{'hx':>5} {'hz':>5} {'arm':>6} {'seed':>4} {'E_tail':>15} "
-          f"{'rel-err':>9} {'1-F':>10} {'ceiling':>10} {'std':>9} "
-          f"{'log_mix':>8}")
+          f"{'rel-err':>9} {'1-F':>10} {'ceiling':>17} {'std':>9} "
+          f"{'mix':>8} {'params':>7}  prior")
     for r in records:
         if r["missing"]:
             print(f"{r['hx']:5.2f} {r['hz']:5.2f} {ARM_LABEL[r['arm']]:>6} "
                   f"{r['seed']:>4} {'MISSING':>15}")
             continue
-        lm = f"{r['log_mix']:8.4f}" if r.get("log_mix") is not None else f"{'':>8}"
+        lm = f"{r['mix']:8.4f}" if r.get("mix") is not None else f"{'':>8}"
         omf = f"{r['one_minus_F']:10.3e}" if r["one_minus_F"] is not None else f"{'?':>10}"
-        ceil = f"{r['ceiling']:10.3e}" if r["ceiling"] is not None else f"{'?':>10}"
+        if r["ceiling"] is None:
+            ceil = f"{'?':>17}"
+        else:
+            flag = " (1-Fs)" if r.get("ceiling_kind") == "1-Fs" else ""
+            ceil = f"{r['ceiling']:10.3e}{flag:>7}"
+        npar = f"{r['n_params']:7d}" if r.get("n_params") is not None else f"{'?':>7}"
         print(f"{r['hx']:5.2f} {r['hz']:5.2f} {ARM_LABEL[r['arm']]:>6} "
               f"{r['seed']:>4} {r['E_tail']:15.9f} "
               f"{(r['rel_err'] if r['rel_err'] is not None else float('nan')):9.2e} "
-              f"{omf} {ceil} {r['E_tail_std']:9.2e} {lm}"
+              f"{omf} {ceil} {r['E_tail_std']:9.2e} {lm} {npar}  {r.get('prior') or ''}"
               + ("  NaN!" if r["nan_tail"] else ""))
 
     if vdicts:

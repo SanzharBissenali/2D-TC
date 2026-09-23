@@ -23,7 +23,9 @@ import statistics
 
 
 def load_refs():
-    """(size, hx, hz) -> {'E0': float, 'F_s': float|None, 'F_plus': float|None}"""
+    """(size, hx, hz) -> {'E0': float, 'F_s': float|None, 'F_plus': float|None,
+    'T_gate': float|None, 'T_gate_branch': str|None} (T_gate keys are the
+    two-branch arm's ceiling, plan Sec 7; None on signfid JSONs predating it)."""
     refs = {}
     for f in glob.glob("results/diagnostics/signfid_hc*_ds*.json"):
         d = json.load(open(f))
@@ -31,13 +33,16 @@ def load_refs():
         for p in d["points"]:
             key = (size, round(p["hx"], 6), round(p["hz"], 6))
             refs[key] = {"E0": p["E0"], "F_s": p.get("F_s"),
-                         "F_plus": p.get("F_plus")}
+                         "F_plus": p.get("F_plus"),
+                         "T_gate": p.get("T_gate"),
+                         "T_gate_branch": p.get("T_gate_branch")}
     for f in glob.glob("results/ed/ed_hc*_ds_*.json"):
         m = re.search(r"ed_hc(\d+x\d+)_ds_hx([\d.]+)_hz([\d.]+)\.json", f)
         if not m:
             continue
         key = (m.group(1), round(float(m.group(2)), 6), round(float(m.group(3)), 6))
-        refs.setdefault(key, {"F_s": None, "F_plus": None})["E0"] = \
+        refs.setdefault(key, {"F_s": None, "F_plus": None, "T_gate": None,
+                              "T_gate_branch": None})["E0"] = \
             json.load(open(f))["E0"]
     return refs
 

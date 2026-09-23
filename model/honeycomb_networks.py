@@ -231,16 +231,21 @@ class ResidualSignedModel(nn.Module):
 
 class _SignMLP(nn.Module):
     """``depth`` tanh Dense layers of width ``hidden`` then Dense(1); float64,
-    default flax init (lecun-normal kernels, zero biases). Instantiated under
-    the fixed scope name 'mlp' so a pretrained tree can replace it wholesale
-    (model/sign_mlp_io.py holds the flat key/shape spec)."""
+    default flax init (lecun-normal kernels, zero biases). Inputs are the raw
+    {0,1} features and are recentred to {-1,+1} INSIDE (h = 2u - 1): with
+    zero-bias init the all-zero feature vector (the all-up config, eps = x = 0)
+    would otherwise give m = 0 exactly -- a node of tanh(m) sitting on the
+    sign-gauge anchor. Instantiated under the fixed scope name 'mlp' so a
+    pretrained tree can replace it wholesale (model/sign_mlp_io.py holds the
+    flat key/shape spec; the pretrain script feeds the same raw {0,1} features
+    and so inherits this recentring)."""
 
     hidden: int
     depth: int
 
     @nn.compact
     def __call__(self, u):
-        h = u
+        h = 2.0 * u - 1.0
         for _ in range(self.depth):
             h = nn.tanh(nn.Dense(self.hidden, param_dtype=jnp.float64)(h))
         return nn.Dense(1, param_dtype=jnp.float64)(h)[..., 0]
@@ -285,28 +290,33 @@ class MLPSignModel(nn.Module):
 class TwoBranchModel(nn.Module):
     """Two-branch arm T (docs/signhead_benchmark_plan.md):
 
-        psi = e^c * A_triv(sigma) + s(sigma) * A_top(sigma),   s = (-1)^{s01} in {+-1},
+        psi = a * A_triv(sigma) + s(sigma) * A_top(sigma),   s = (-1)^{s01} in {+-1},
 
     two INDEPENDENT positive Combo trunks (scopes 'base_triv' / 'base_top' =>
-    distinct init draws) and one scalar c ('log_mix', init log_mix_init). Stable
-    complex log: with a1 = c + log A_triv, a2 = log A_top, m = max(a1, a2),
-        log psi = m + log|e^{a1-m} + s e^{a2-m}| + 1j*pi*[e^{a1-m} + s e^{a2-m} < 0].
-    At c -> -inf this is exactly SignedModel (the head-only arm: log A_top +
-    1j*pi*s01); c = -3 keeps the trivial branch at ~5% amplitude at step 0.
-    Real params, complex output; the head is a host callback on the input,
-    once per batch (zero gradient by construction).
+    distinct init draws) and one SIGNED real scalar a ('mix', init mix_init).
+    Stable complex log: with a1 = log A_triv, a2 = log A_top, m = max(a1, a2),
+        w = a e^{a1-m} + s e^{a2-m},
+        log psi = m + log|w| + 1j*pi*[w < 0]
+    (a stays O(1) OUTSIDE the max/log, so a = 0 and a < 0 are both valid).
+    a = 0 is exactly SignedModel (the head-only arm: log A_top + 1j*pi*s01);
+    a > 0 lets the trivial branch overrule the head only where s = -1 (the
+    s = +1 sector is pinned to the global sign), a < 0 swaps which head-sector
+    is flippable (s = +1 becomes the flippable one); mix_init = +0.05 keeps the
+    trivial branch at ~5% amplitude at step 0. Real params, complex output; the
+    head is a host callback on the input, once per batch (zero gradient by
+    construction).
     """
 
     base_triv: nn.Module
     base_top: nn.Module
     head_s01: Any            # QECSignHead.s01 -- static (host) callable
-    log_mix_init: float = -3.0
+    mix_init: float = 0.05
 
     @nn.compact
     def __call__(self, x):
-        c = self.param('log_mix',
-                       lambda key: jnp.asarray(self.log_mix_init, dtype=jnp.float64))
-        a1 = self.base_triv(x) + c
+        a = self.param('mix',
+                       lambda key: jnp.asarray(self.mix_init, dtype=jnp.float64))
+        a1 = self.base_triv(x)
         a2 = self.base_top(x)
         s01 = jax.pure_callback(
             lambda xb: np.asarray(self.head_s01(xb), dtype=np.float64),
@@ -314,7 +324,7 @@ class TwoBranchModel(nn.Module):
             x, vmap_method='expand_dims')
         s = 1.0 - 2.0 * s01
         m = jnp.maximum(a1, a2)
-        w = jnp.exp(a1 - m) + s * jnp.exp(a2 - m)
+        w = a * jnp.exp(a1 - m) + s * jnp.exp(a2 - m)
         return m + jnp.log(jnp.abs(w)) + 1j * jnp.pi * (w < 0).astype(jnp.float64)
 
 
@@ -401,5 +411,5 @@ def create_two_branch_model(config, geometry, head):
     base_triv = create_honeycomb_model(config, geometry)
     base_top = create_honeycomb_model(config, geometry)
     model = TwoBranchModel(base_triv, base_top, head.s01,
-                           log_mix_init=float(config.get('mix_init', -3.0)))
+                           mix_init=float(config.get('mix_init', 0.05)))
     return model, base_triv

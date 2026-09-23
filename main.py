@@ -201,11 +201,13 @@ def main():
                       + (f"; warm start {config['mlp_init']}" if config.get('mlp_init') else
                          " (random init, arm M)"))
             elif config.get('sign_impl') == 'twobranch':
-                # Arm T: psi = e^c A_triv + (-1)^s A_top, two independent trunks.
+                # Arm T: psi = a A_triv + (-1)^s A_top, two independent trunks,
+                # a = signed real scalar 'mix' (a = 0 = head-only arm).
                 from model.honeycomb_networks import create_two_branch_model
                 model, base_model = create_two_branch_model(config, geometry, head)
-                print(f"[sign head] qec/twobranch: psi = e^c A_triv + (-1)^s A_top, "
-                      f"c init {config.get('mix_init', -3.0)} (c -> -inf = head-only arm)")
+                print(f"[sign head] qec/twobranch: psi = a A_triv + (-1)^s A_top, "
+                      f"signed mix a init {config.get('mix_init', 0.05)} "
+                      f"(a = 0 = head-only arm; a < 0 flips the s=+1 sector instead)")
             else:
                 from model.honeycomb_networks import SignedModel
                 model = SignedModel(base_model, head.s01)

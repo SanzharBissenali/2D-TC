@@ -372,7 +372,8 @@ def run_minsr(
                         variational_state=vstate, use_ntk=True)
 
     head = _resolve_head(hamiltonian, head)
-    _ensure_keys(filename, HEAD_KEYS)
+    _ensure_keys(filename, HEAD_KEYS
+                 + (["mix"] if 'mix' in vstate.parameters else []))
     t_log_prev = time.time()
 
     loop = tqdm(range(n_iter))
@@ -393,18 +394,24 @@ def run_minsr(
 
         t_head, n_head = _head_stats(head)      # host head time inside driver.advance
         step_wall, t_log_prev = time.time() - t_log_prev, time.time()
+        if not np.isfinite(dtheta_norm):
+            print(f"!!! run_minsr step {step}: NON-FINITE parameter update "
+                  f"(||dtheta|| = {dtheta_norm}) -- energy {E.mean}", flush=True)
+        # two-branch arm T: the signed mix scalar a ('mix'), per step (cheap)
+        mix = vstate.parameters.get('mix') if hasattr(vstate.parameters, 'get') else None
+        mix = float(np.asarray(mix).reshape(())) if mix is not None else None
 
         update_data(filename, [
             "iters", "energy", "energy_eom", "energy_var", "tau_corr",
             "Rsplit", "Vscore", "MCMC_accepted", "MCMC_total",
             "t_sample", "t_grad", "t_sr", "grad_norm", "dtheta_norm", "dt_step",
-            *HEAD_KEYS
+            *HEAD_KEYS, *(["mix"] if mix is not None else [])
         ], [
             t, E.mean, E.error_of_mean, E.variance, E.tau_corr,
             E.R_hat, config['N'] * E.variance / E.mean**2,
             vstate.sampler_state.n_accepted, vstate.sampler_state.n_steps,
             0.0, 0.0, 0.0, 0.0, dtheta_norm, lr_step,
-            t_head, n_head, step_wall
+            t_head, n_head, step_wall, *([mix] if mix is not None else [])
         ])
 
         if jnp.isnan(E.mean):
@@ -453,6 +460,7 @@ def run_minsr(
             "step_time": step_time,
             "mcmc_accept_frac": n_acc / max(n_tot, 1.0),
             "sim_t": t,
+            **({"mix": mix} if mix is not None else {}),
             **wb_extra,
         })
 

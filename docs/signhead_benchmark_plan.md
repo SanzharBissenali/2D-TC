@@ -32,12 +32,14 @@ pseudo-inverse of the hexagon mask, unique on the simply-connected patch).
 |---|---|---|
 | **M** (MLP sign) | `ψ = A(σ)·tanh(m_θ(ε, x))`, `m_θ` = MLP (N+F → 64 → 64 → 1, tanh), random init | yes, from energy alone |
 | **M-pre** | same; `m_θ` pre-fit supervised to ED signs (\|ψ_ED\|²-weighted BCE on all 2^N configs at the SAME size), then VMC | yes, warm-started |
-| **T** (two-branch) | `ψ = e^{c}·A_triv(σ) + s_head(σ)·A_top(σ)`; two Combo trunks + one scalar `c` (init −3 ⇒ step 0 ≈ production head-only arm); `s_head = (−1)^{poly(x)}` | no |
+| **T** (two-branch) | `ψ = a·A_triv(σ) + s_head(σ)·A_top(σ)`; two Combo trunks + one SIGNED real scalar `a` (`mix`, init +0.05 ⇒ step 0 ≈ production head-only arm; `a = 0` IS the head-only arm; `a < 0` swaps which head-sector the trivial branch can flip); `s_head = (−1)^{poly(x)}` | no |
 
 Notes
 - All three have complex `log ψ` with real parameters (same non-holomorphic
   QGT path as the Phase-4b residual arm `cnnqR`, `--minsr_mode complex`).
-  `log ψ_T = m + log(e^{a₁−m} + s·e^{a₂−m})`, `m = max(a₁, a₂)` (stable).
+  `a₁ = log A_triv`, `a₂ = log A_top`, `m = max(a₁, a₂)`, `w = a·e^{a₁−m} + s·e^{a₂−m}`,
+  `log ψ_T = m + log|w| + iπ[w<0]` (stable; `a` stays O(1) outside the max/log,
+  so `a = 0` and `a < 0` are both valid — no `e^c` reparameterisation).
 - Nodes: both M and T have `ψ → 0` on configurations whose sign is flipping;
   `∂ log ψ` is large there but those configurations are sampled ∝ |ψ|². Watch
   `diag_shift`; report divergences rather than tune per point.
@@ -78,11 +80,11 @@ crossover.
    construction, F ≤ 16). Adds `n_features_ex`.
 2. `model/honeycomb_networks.py`: `MLPSignModel(base, feats, K, hidden,
    depth, init_params=None)` and `TwoBranchModel(base_triv, base_top,
-   head_s01, log_mix_init=-3.0)`, both wrapping the whole batched net like
+   head_s01, mix_init=0.05)`, both wrapping the whole batched net like
    `SignedModel` (one host callback per batch). Trunk factory reused; the two
    trunks of T get distinct flax scopes ('triv'/'top') ⇒ independent init.
 3. `utils/config.py`: `--sign_impl {…, mlp, twobranch}`, `--mlp_hidden 64
-   --mlp_depth 2 --mlp_init <npz>`, `--mix_init -3.0`; exclusivity asserts
+   --mlp_depth 2 --mlp_init <npz>`, `--mix_init 0.05`; exclusivity asserts
    (real trunk only; `--decoder mwpm` only; ds only); `sim_params` record;
    wandb `_tags` += `sign_impl`. `main.py`: two new branches next to the
    `residual` one; hexflip gate on the base trunk(s); off-diagonal observables
@@ -151,6 +153,18 @@ parity-hardness argument is wrong and that is the headline instead.
   `T_gate = min_g Σ|ψ_ED|²[s_head=+1 ∧ sign ψ_ED ≠ g]` — report it per cell next
   to `1−F_s`. (Oracle: at 3D L=2 OBC `T_gate = 0` at all 9 points while
   `1−F_s(pt2) = 3.6e-2` at h_x=0.8.)
+  **Definition as implemented (2026-09-24, `scripts/sign_fidelity.py`):** with
+  `s ∈ {±1}` the mwpm head sign over ALL 2^N configs, `ψ_ED` anchored exactly as
+  for `F_s` (all-up config positive), `g ∈ {±1}` the global sign of the pinned
+  sector, and `sign ψ ≠ g` evaluated on nonzero amplitudes only:
+  `T_gate_plus  = min_g Σ|ψ_ED|²[s=+1 ∧ sign ψ_ED ≠ g]`,
+  `T_gate_minus = min_g Σ|ψ_ED|²[s=−1 ∧ sign ψ_ED ≠ g]`,
+  `T_gate = min(T_gate_plus, T_gate_minus)`, `T_gate_branch ∈ {plus, minus}`.
+  `plus` is the `a > 0` realisation (trivial branch flips only `s=−1`), `minus`
+  the `a < 0` one (flips only `s=+1`); since `a` is a signed trainable scalar T
+  can reach either, so its ceiling is the min. Per-point keys in the signfid
+  JSONs; `signbench_summary.py` uses `T_gate` for T's ceiling when present,
+  else `1−F_s` flagged `(1-Fs)`.
 - **3D deviations (peer, 2×2×3 OBC, N=20):** ε from the `linear` decoder (pt2
   commits to no single recovery); `x` = plaquette pair-move bits + 8 star bits
   (needed for injectivity in 3D); heads in-model as tables (no host callback);

@@ -131,7 +131,7 @@ def run_config(base, is_complex, hx, hz, hy, sp):
         'res_hidden': _sp(sp, 'res_hidden', 16),
         'mlp_hidden': _sp(sp, 'mlp_hidden', 64),
         'mlp_depth': _sp(sp, 'mlp_depth', 2),
-        'mix_init': _sp(sp, 'mix_init', -3.0),
+        'mix_init': _sp(sp, 'mix_init', 0.05),
     }
 
 
@@ -170,21 +170,21 @@ def build_vstate(cfg, geometry, head):
 
 
 def two_branch_head_stripped_fidelity(cfg, geometry, psi_ed, params, N):
-    """arm T's F_trunk analogue: force the head sign s -> +1 (drop the
-    oscillating sign, keep both branches), i.e. fidelity of
-    e^{a1-m} + e^{a2-m} (a1 = c + log A_triv, a2 = log A_top, m = max(a1,a2))
-    against psi_ED. Evaluates the two bare Combo trunks separately (same
+    """arm T's F_trunk analogue: force the head sign s -> +1 AND drop the sign
+    of the mix (keep both branch amplitudes), i.e. fidelity of the positive
+    state |a| e^{a1-m} + e^{a2-m} (a1 = log A_triv, a2 = log A_top,
+    m = max(a1,a2)) against psi_ED. Evaluates the two bare Combo trunks separately (same
     module definition, different param subtrees -- flax modules are
     stateless) since TwoBranchModel's own forward always applies the true
     decoded sign."""
     from model.honeycomb_networks import create_honeycomb_model
 
     bare = create_honeycomb_model(cfg, geometry)
-    a1 = np.real(enumerate_logs(bare, {'params': params['base_triv']}, N)) \
-        + float(params['log_mix'])
+    a1 = np.real(enumerate_logs(bare, {'params': params['base_triv']}, N))
     a2 = np.real(enumerate_logs(bare, {'params': params['base_top']}, N))
     m = np.maximum(a1, a2)
-    psi_hs = (np.exp(a1 - m) + np.exp(a2 - m)).astype(np.complex128)
+    psi_hs = (abs(float(params['mix'])) * np.exp(a1 - m)
+              + np.exp(a2 - m)).astype(np.complex128)
     psi_hs /= np.linalg.norm(psi_hs)
     return float(abs(np.vdot(psi_ed, psi_hs)) ** 2)
 
@@ -312,12 +312,12 @@ def main():
             F = float(abs(np.vdot(psi_ed, psi)) ** 2)
             F_trunk = float(abs(np.vdot(psi_ed, psi_t)) ** 2) \
                 if sign_src == 'operator' else None
-            log_mix = None
+            mix = None
             if sign_src == 'twobranch':
-                # arm T's own F_trunk analogue (head stripped: s -> +1) and
-                # the trained log-mix c, both read straight from the loaded
-                # checkpoint's params.
-                log_mix = float(vs.parameters['log_mix'])
+                # arm T's own F_trunk analogue (head stripped: s -> +1, |a|)
+                # and the trained signed mix a, both read straight from the
+                # loaded checkpoint's params.
+                mix = float(vs.parameters['mix'])
                 F_trunk = two_branch_head_stripped_fidelity(
                     cfg, g, psi_ed, vs.parameters, N)
 
@@ -330,7 +330,7 @@ def main():
             ok = de < max(0.02 * abs(evals[0]), 0.05)
             records.append({
                 'hx': hx, 'hz': hz, 'hy': args.hy, 'arm': token,
-                'F': F, 'F_trunk': F_trunk, 'log_mix': log_mix,
+                'F': F, 'F_trunk': F_trunk, 'mix': mix,
                 'E0': float(evals[0]),
                 'E_check': e_chk, 'E_run_tail': e_run, 'dE': de,
                 'energy_check_ok': bool(ok),
@@ -338,7 +338,7 @@ def main():
             })
             print(f"  {token:22s} F={F:.6f}"
                   + (f" F_trunk={F_trunk:.6f}" if F_trunk is not None else "")
-                  + (f" log_mix={log_mix:.4f}" if log_mix is not None else "")
+                  + (f" mix={mix:.4f}" if mix is not None else "")
                   + f" E_chk={e_chk:.5f} E_run={e_run:.5f} dE={de:.2e} "
                   + ("OK" if ok else "ENERGY-CHECK-FAIL"), flush=True)
         del H, psi_ed

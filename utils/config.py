@@ -215,7 +215,7 @@ def parse_arguments() -> Dict[str, Any]:
                              "jax.pure_callback; 'residual' (Phase 4b) = 'model' plus the "
                              "tie-gated residual phase MLP over decoder features; "
                              "'mlp' (learned-sign arm M / M-pre) psi = A * tanh(MLP(eps, x)); "
-                             "'twobranch' (arm T) psi = e^c A_triv + (-1)^s A_top "
+                             "'twobranch' (arm T) psi = a A_triv + (-1)^s A_top, a a signed real mix "
                              "(docs/signhead_benchmark_plan.md).")
     parser.add_argument('--decoder', choices=['mwpm', 'anchor', 'greedy', 'unionfind', 'tie_sum'],
                         default='mwpm',
@@ -232,9 +232,10 @@ def parse_arguments() -> Dict[str, Any]:
                         help="sign_impl mlp: npz of pretrained MLP params (arm M-pre; written by "
                              "scripts/pretrain_sign_mlp.py, spec in model/sign_mlp_io.py) -- "
                              "replaces the 'mlp' subtree after init")
-    parser.add_argument('--mix_init', type=float, default=-3.0,
-                        help='sign_impl twobranch: init of the scalar log-mix c '
-                             '(psi = e^c A_triv + s A_top; -inf = head-only arm)')
+    parser.add_argument('--mix_init', type=float, default=0.05,
+                        help='sign_impl twobranch: init of the SIGNED real mix scalar a '
+                             '(psi = a A_triv + s A_top; 0 = head-only arm, a < 0 makes '
+                             'the s=+1 head-sector the flippable one)')
     parser.add_argument('--minsr_mode', choices=['', 'real', 'complex', 'holomorphic'], default='',
                         help="Optional VMC_SRt jacobian_mode override ('' = netket auto). "
                              "'complex' on a real arm tightens A/B trajectory comparability.")
@@ -280,7 +281,7 @@ def parse_arguments() -> Dict[str, Any]:
             'mlp_hidden': 64,
             'mlp_depth': 2,
             'mlp_init': '',
-            'mix_init': -3.0,
+            'mix_init': 0.05,
             'minsr_mode': '',
             'lr_final_frac': 0.1,
             'optimizer': 'tdvp',
@@ -563,7 +564,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "mlp_hidden": [config.get("mlp_hidden", 64)],
             "mlp_depth": [config.get("mlp_depth", 2)],
             "mlp_init": [config.get("mlp_init", "")],
-            "mix_init": [config.get("mix_init", -3.0)],
+            "mix_init": [config.get("mix_init", 0.05)],
             "minsr_mode": [config.get("minsr_mode", "")],
             "Lx": [config["Lx"]],
             "Ly": [config["Ly"]],

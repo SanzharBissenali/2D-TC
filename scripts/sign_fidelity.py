@@ -402,6 +402,13 @@ def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0,
     dnames = dec_tables["names"] if dec_tables is not None else []
     dec_agree = {n: 0.0 for n in dnames}
     ts_w = {"fallback": 0.0, "truncated": 0.0, "cancelled": 0.0}
+    # T_gate (plan Sec 7): weight by (head sign s1, ED sign) quadrant, for the
+    # two-branch arm's ceiling -- with positive trunks psi = a A_triv + s A_top
+    # can take either sign only where s = -sign(a); the other head-sector is
+    # pinned to one global sign g, so its wrong weight (min over g) is the
+    # exact representability floor. Same all-up anchor as F_s; psi = 0
+    # configs carry zero weight and never contribute.
+    quad = {(+1, +1): 0.0, (+1, -1): 0.0, (-1, +1): 0.0, (-1, -1): 0.0}
     t0 = time.time()
     for lo in range(0, dim, chunk):
         c = np.arange(lo, min(lo + chunk, dim), dtype=np.int64)
@@ -412,6 +419,9 @@ def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0,
         agree2 += float(wc[ok2].sum())
         disagree12 += float(wc[s1 != s2].sum())
         pos_w += float(wc[ec > 0].sum())
+        for sh in (+1, -1):
+            for se in (+1, -1):
+                quad[(sh, se)] += float(wc[(s1 == sh) & (ec == se)].sum())
         bad = wc[~ok1]
         if bad.size:
             wrong_max = max(wrong_max, float(bad.max()))
@@ -440,6 +450,11 @@ def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0,
 
     fid_by_d = {d: (agree_by_d[d] / w_by_d[d] if w_by_d[d] > 1e-20 else None)
                 for d in sorted(w_by_d)}
+    # min over the global sign g of the pinned sector: g = +1 counts the
+    # ED-negative weight, g = -1 the ED-positive weight
+    t_gate_plus = min(quad[(+1, -1)], quad[(+1, +1)])
+    t_gate_minus = min(quad[(-1, -1)], quad[(-1, +1)])
+    t_gate_branch = "plus" if t_gate_plus <= t_gate_minus else "minus"
     dec_block = None
     if dec_tables is not None:
         if "mwpm" in dec_agree:
@@ -466,6 +481,10 @@ def run_point(g, model, hx, hz, k, table, matchings, chunk, tol=0,
         "F_s_tie2": agree2,                  # opposite MWPM tie-breaking
         "tie_disagree_weight": disagree12,
         "F_plus": pos_w,                     # positive-head (Hastings) ceiling
+        "T_gate_plus": t_gate_plus,          # two-branch arm T ceiling, a > 0 (s=+1 pinned)
+        "T_gate_minus": t_gate_minus,        # ... a < 0 (s=-1 pinned)
+        "T_gate": min(t_gate_plus, t_gate_minus),
+        "T_gate_branch": t_gate_branch,
         "onsector_weight": w_by_d.get(0, 0.0),
         "onsector_fidelity": fid_by_d.get(0),
         "weight_by_defects": {str(d): w_by_d[d] for d in sorted(w_by_d)},
@@ -541,7 +560,7 @@ def main():
     points = [tuple(float(x) for x in p.split(","))
               for p in args.points.split(";") if p.strip()]
     hdr = (f"{'hx':>5} {'hz':>5} {'E0':>14} {'F_s':>12} {'F_plus':>12} "
-           f"{'on-sect wt':>12} {'tie wt':>10} {'wrong wt':>10}")
+           f"{'on-sect wt':>12} {'tie wt':>10} {'wrong wt':>10} {'T_gate':>10}")
     if dec_tables is not None:
         hdr += "".join(f" {'1-F_s:' + n:>16}" for n in dec_names)
     print(hdr, flush=True)
@@ -553,7 +572,7 @@ def main():
             records.append(r)
             line = (f"{hx:5.2f} {hz:5.2f} {r['E0']:14.8f} {'(complex)':>12} "
                     f"{r['F_plus']:12.9f} {r['onsector_weight']:12.9f} "
-                    f"{'-':>10} {'-':>10}")
+                    f"{'-':>10} {'-':>10} {'-':>10}")
             line += "".join(f" {r['decoders'][n]['wrong_weight']:16.9e}"
                             for n in dec_names)
             print(line, flush=True)
@@ -565,7 +584,8 @@ def main():
         records.append(r)
         line = (f"{hx:5.2f} {hz:5.2f} {r['E0']:14.8f} {r['F_s']:12.9f} "
                 f"{r['F_plus']:12.9f} {r['onsector_weight']:12.9f} "
-                f"{r['tie_disagree_weight']:10.3e} {r['wrong_weight']:10.3e}")
+                f"{r['tie_disagree_weight']:10.3e} {r['wrong_weight']:10.3e} "
+                f"{r['T_gate']:10.3e}")
         if dec_tables is not None:
             line += "".join(f" {r['decoders'][n]['wrong_weight']:16.9e}"
                             for n in dec_names)

@@ -130,7 +130,8 @@ def load_features_npz(path):
 def fit_mlp(X, w, y, hidden, depth, lr, epochs, target, seed,
             report_every=25, chunk=1 << 20):
     """Full-batch (chunk-accumulated) Adam fit of _SignMLP to the weighted
-    sign targets. Returns (flax params tree, summary dict)."""
+    sign targets. Returns (flax params tree of the BEST epoch by weighted
+    1 - F_s, summary dict incl. best_1_minus_Fs / best_epoch / final_1_minus_Fs)."""
     import jax
     jax.config.update("jax_enable_x64", True)   # standalone run: netket may
     import jax.numpy as jnp                      # not have been imported yet
@@ -185,11 +186,17 @@ def fit_mlp(X, w, y, hidden, depth, lr, epochs, target, seed,
     t0 = time.time()
     achieved = False
     ep = 0
+    best_params, best_1mfs, best_ep = params, float("inf"), -1
     for ep in range(epochs):
         loss_sum, correct_sum, grads = epoch_step(params, Xc, Wc, Yc)
+        fs = float(correct_sum)          # total weight sums to 1 (padding => 0)
+        # correct_sum was evaluated on the PRE-update params of this epoch:
+        # keep those as the best-epoch snapshot (the saved tree is then the
+        # one whose 1-F_s is reported, not an unevaluated post-update step).
+        if 1.0 - fs < best_1mfs:
+            best_params, best_1mfs, best_ep = params, 1.0 - fs, ep
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
-        fs = float(correct_sum)          # total weight sums to 1 (padding => 0)
         loss_curve.append(float(loss_sum))
         one_minus_fs_curve.append(1.0 - fs)
         reached = (1.0 - fs) <= target
@@ -202,10 +209,12 @@ def fit_mlp(X, w, y, hidden, depth, lr, epochs, target, seed,
                   f"<= {target:.1e}", flush=True)
             break
 
-    return params, {
+    assert best_1mfs == min(one_minus_fs_curve)
+    return best_params, {
         "epochs_run": ep + 1, "achieved_target": achieved,
         "final_1_minus_Fs": one_minus_fs_curve[-1],
         "final_loss": loss_curve[-1],
+        "best_1_minus_Fs": best_1mfs, "best_epoch": best_ep,
         "min_1_minus_Fs": min(one_minus_fs_curve),
         "loss_curve": loss_curve, "one_minus_Fs_curve": one_minus_fs_curve,
         "wall_s": time.time() - t0,
@@ -295,8 +304,9 @@ def main():
     with open(json_path, "w") as f:
         json.dump(payload, f, indent=1)
     print(f"# wrote {json_path}", flush=True)
-    print(f"# CEILING CHECK: final 1-F_s = {summary['final_1_minus_Fs']:.3e} "
-          f"vs target {args.target:.1e} -- "
+    print(f"# CEILING CHECK: best 1-F_s = {summary['best_1_minus_Fs']:.3e} "
+          f"(epoch {summary['best_epoch']}, SAVED) final 1-F_s = "
+          f"{summary['final_1_minus_Fs']:.3e} vs target {args.target:.1e} -- "
           + ("REACHED (MLP captured the head-exact tail)" if summary["achieved_target"]
              else "NOT REACHED (MLP is under-capacity at this hidden/depth -- a result)"),
           flush=True)

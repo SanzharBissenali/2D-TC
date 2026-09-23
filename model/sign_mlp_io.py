@@ -14,6 +14,9 @@ flattened with '/' (flax.traverse_util convention):
 
 n_in = QECSignHead.n_features_ex = N + F (features [eps, x] in {0,1}); float64.
 depth = number of tanh hidden layers (depth 0 => a single Dense_0 (n_in, 1)).
+Both writer and reader feed the RAW {0,1} features: _SignMLP recentres them to
+{-1,+1} itself (h = 2u - 1) before Dense_0, so the saved kernels are expressed
+in the recentred basis on both sides -- do NOT pre-recentre in the writer.
 """
 
 import numpy as np

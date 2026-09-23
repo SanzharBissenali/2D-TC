@@ -5,7 +5,8 @@
 #   cnnqM   arm M:     psi = A(sigma) * tanh(m_theta(eps, x)), m_theta random init
 #   cnnqMp  arm M-pre: same architecture, m_theta warm-started from a
 #           supervised pre-fit to the exact ED signs (scripts/pretrain_sign_mlp.py)
-#   cnnqT   arm T:     psi = e^c A_triv(sigma) + (-1)^s(sigma) A_top(sigma)
+#   cnnqT   arm T:     psi = a A_triv(sigma) + (-1)^s(sigma) A_top(sigma), a a signed
+#           real mix scalar (init --mix_init 0.05; a = 0 = head-only arm)
 # All three: real trunk(s), complex log psi (non-holomorphic QGT, same path as
 # the Phase-4b residual arm cnnqR -- --minsr_mode complex). Phase-3 recipe
 # (docs/signhead_benchmark_plan.md Sec 1): minSR lr 0.01, diag_shift 6e-5,
@@ -23,9 +24,14 @@
 #      e.g. POINTS=0.4:0+0.8:0.2+1.2:0.4; SIM_TIME (3.5), SEED (0), WANDB (1),
 #      MLP_DIR (results/pretrain).
 # Submit (shared queue; timing TBD at first run -- budget like cnnqR, ~1.5x
-# cnnqB's 3.6 s/step, plus the per-batch host callback for the sign):
+# cnnqB's 3.6 s/step, plus the per-batch host callback for the sign). Plan
+# Sec 4 stage d = chunks of 3 runs per 1:45 job, e.g. all three arms at one
+# point:
 #   ... submit jobs/nersc_signbench.sh -t 1:45:00 \
-#       --export=ALL,LX=2,LY=3,ARMS=cnnqM+cnnqT,POINTS=0.4:0+0.8:0.2+1.2:0
+#       --export=ALL,LX=2,LY=3,ARMS=cnnqM+cnnqMp+cnnqT,POINTS=0.4:0
+# jobids use the canonical %g strings (0.4:0 -> hx0.4_hz0, the Phase-4
+# convention), so POINTS=0.40:0.0 names the same run as POINTS=0.4:0.
+# MLP_DIR may be absolute or repo-relative.
 #SBATCH -A m5340_g
 #SBATCH -C gpu
 #SBATCH -q shared
@@ -51,6 +57,7 @@ POINTS="${POINTS:-0.4:0}"; POINTS="${POINTS//+/ }"
 SIM_TIME="${SIM_TIME:-3.5}"
 SEED="${SEED:-0}"
 MLP_DIR="${MLP_DIR:-results/pretrain}"
+case "$MLP_DIR" in /*) ;; *) MLP_DIR="$REPO/$MLP_DIR" ;; esac   # absolute or repo-relative
 
 python -c "import pymatching" 2>/dev/null \
     || { echo "!!! pymatching missing in 2dtc (pip install on a login node)"; exit 1; }
@@ -84,13 +91,14 @@ for pt in $POINTS; do
   hx="${pt%%:*}"; hz="${pt##*:}"
   # Python's f'{x:g}' formatting drives the pretrain npz filename; normalize
   # the bash hx/hz the same way (awk %g) so a POINTS token like "0.40" still
-  # finds the "hx0.4" cache written by scripts/pretrain_sign_mlp.py. LC_ALL=C
+  # finds the "hx0.4" cache written by scripts/pretrain_sign_mlp.py, and the
+  # jobid is canonical (hx0.4_hz0) whatever the POINTS spelling. LC_ALL=C
   # is load-bearing: under a comma-decimal locale (observed: kk_KZ.UTF-8)
   # awk's %g prints "0,4" instead of "0.4", silently breaking the lookup.
   hx_g=$(LC_ALL=C awk -v v="$hx" 'BEGIN{printf "%g", v}')
   hz_g=$(LC_ALL=C awk -v v="$hz" 'BEGIN{printf "%g", v}')
   for arm in $ARMS; do
-    jobid="hc${LX}x${LY}_ds_hx${hx}_hz${hz}_${arm}${SEED_SUFFIX}"
+    jobid="hc${LX}x${LY}_ds_hx${hx_g}_hz${hz_g}_${arm}${SEED_SUFFIX}"
     base="$OUTDIR/G-equiv_1_${jobid}"
     if python "$REPO/scripts/is_complete.py" "$base" "$LX"; then
         echo "=== skip $jobid (complete) ==="
@@ -98,7 +106,7 @@ for pt in $POINTS; do
     fi
     extra=""
     if [ "$arm" = "cnnqMp" ]; then
-        mlp_npz="$REPO/$MLP_DIR/mlp_hc${LX}x${LY}_hx${hx_g}_hz${hz_g}_h64d2.npz"
+        mlp_npz="$MLP_DIR/mlp_hc${LX}x${LY}_hx${hx_g}_hz${hz_g}_h64d2.npz"
         if [ ! -f "$mlp_npz" ]; then
             echo "!!! $jobid FAILED: missing pretrained MLP $mlp_npz -- run" \
                  "'python scripts/pretrain_sign_mlp.py --Lx $LX --Ly $LY --hx $hx_g --hz $hz_g' first -- skipping"
