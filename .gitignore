@@ -23,3 +23,7 @@ figures/
 
 # W&B offline run dirs (streamed on the compute node, pushed via `wandb sync`)
 wandb/
+
+# head-fit pretraining: per-step parameter snapshots and held-out sets are large, regenerable
+results/pretrain/*_snapshots.npz
+results/pretrain/*_val.npz
