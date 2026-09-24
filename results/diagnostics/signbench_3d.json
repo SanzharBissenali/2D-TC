@@ -1,0 +1,221 @@
+{
+ "Lx": null,
+ "Ly": null,
+ "size": "2x2x3",
+ "points": [
+  [
+   0.2,
+   0.0
+  ],
+  [
+   0.2,
+   0.2
+  ],
+  [
+   0.2,
+   0.4
+  ],
+  [
+   0.5,
+   0.0
+  ],
+  [
+   0.5,
+   0.2
+  ],
+  [
+   0.5,
+   0.4
+  ],
+  [
+   0.8,
+   0.0
+  ],
+  [
+   0.8,
+   0.2
+  ],
+  [
+   0.8,
+   0.4
+  ]
+ ],
+ "arms": [
+  "cnnqM",
+  "cnnqMp",
+  "cnnqT"
+ ],
+ "tail": 20,
+ "records": [
+  {
+   "size": "2x2x3",
+   "hx": 0.2,
+   "hz": 0.0,
+   "arm": "cnnqM",
+   "seed": 0,
+   "missing": false,
+   "E_tail": -20.92369763102721,
+   "E_tail_std": 0.00927575235007702,
+   "Vscore_tail": 0.0016752716868007596,
+   "nan_tail": false,
+   "E0": -23.2207695390176,
+   "rel_err": 0.10286412152699476,
+   "rel_err_tail": 0.09892316032552863,
+   "F": 0.4563334460632308,
+   "F_trunk": null,
+   "one_minus_F": 0.5436665539367692,
+   "ceiling": 0.0,
+   "ceiling_kind": "0: (eps, x) injective",
+   "mix": null,
+   "warm_1mFs": null,
+   "ceiling_T_head": null,
+   "T_gate_plus_minus": null,
+   "log_mix": null,
+   "n_params": 18284,
+   "diverged": true
+  },
+  {
+   "size": "2x2x3",
+   "hx": 0.2,
+   "hz": 0.0,
+   "arm": "cnnqMp",
+   "seed": 0,
+   "missing": false,
+   "E_tail": -23.207949258374754,
+   "E_tail_std": 0.003962144106381028,
+   "Vscore_tail": 0.0049515510835593845,
+   "nan_tail": false,
+   "E0": -23.2207695390176,
+   "rel_err": 0.000558442620639494,
+   "rel_err_tail": 0.0005521040386410833,
+   "F": 0.998723016212815,
+   "F_trunk": null,
+   "one_minus_F": 0.0012769837871849932,
+   "ceiling": 0.0,
+   "ceiling_kind": "0: (eps, x) injective",
+   "mix": null,
+   "warm_1mFs": 1.142162213474407e-06,
+   "ceiling_T_head": null,
+   "T_gate_plus_minus": null,
+   "log_mix": null,
+   "n_params": 18284,
+   "diverged": false
+  },
+  {
+   "size": "2x2x3",
+   "hx": 0.2,
+   "hz": 0.0,
+   "arm": "cnnqT",
+   "seed": 0,
+   "missing": false,
+   "E_tail": -23.201292668977906,
+   "E_tail_std": 0.004315297749704655,
+   "Vscore_tail": 0.0013785477796242243,
+   "nan_tail": false,
+   "E0": -23.2207695390176,
+   "rel_err": 0.0009442459027085322,
+   "rel_err_tail": 0.000838769361496225,
+   "F": 0.9965489742311802,
+   "F_trunk": null,
+   "one_minus_F": 0.0034510257688198376,
+   "ceiling": 0.0,
+   "ceiling_kind": "T_gate (signed-a representability)",
+   "mix": -2.8003438014014543,
+   "warm_1mFs": null,
+   "ceiling_T_head": 3.276920557536894e-07,
+   "T_gate_plus_minus": [
+    0.0,
+    3.276920557536894e-07
+   ],
+   "log_mix": -2.8003438014014543,
+   "n_params": 22999,
+   "diverged": false
+  },
+  {
+   "size": "2x2x3",
+   "hx": 0.2,
+   "hz": 0.2,
+   "arm": "cnnqM",
+   "seed": 0,
+   "missing": false,
+   "E_tail": -21.090428918789566,
+   "E_tail_std": 0.06441186159316178,
+   "Vscore_tail": 0.013677246420023121,
+   "nan_tail": false,
+   "E0": -23.381730558524417,
+   "rel_err": 0.09889460234475005,
+   "rel_err_tail": 0.09799538293368526,
+   "F": 0.4502915833594534,
+   "F_trunk": null,
+   "one_minus_F": 0.5497084166405466,
+   "ceiling": 0.0,
+   "ceiling_kind": "0: (eps, x) injective",
+   "mix": null,
+   "warm_1mFs": null,
+   "ceiling_T_head": null,
+   "T_gate_plus_minus": null,
+   "log_mix": null,
+   "n_params": 18284,
+   "diverged": true
+  },
+  {
+   "size": "2x2x3",
+   "hx": 0.2,
+   "hz": 0.2,
+   "arm": "cnnqMp",
+   "seed": 0,
+   "missing": false,
+   "E_tail": -23.364934654444088,
+   "E_tail_std": 0.0046927768702549316,
+   "Vscore_tail": 0.006093891132296785,
+   "nan_tail": false,
+   "E0": -23.381730558524417,
+   "rel_err": 0.000650497280577955,
+   "rel_err_tail": 0.0007183345149876238,
+   "F": 0.9984347384210314,
+   "F_trunk": null,
+   "one_minus_F": 0.0015652615789686353,
+   "ceiling": 0.0,
+   "ceiling_kind": "0: (eps, x) injective",
+   "mix": null,
+   "warm_1mFs": 2.1687686062588085e-06,
+   "ceiling_T_head": null,
+   "T_gate_plus_minus": null,
+   "log_mix": null,
+   "n_params": 18284,
+   "diverged": false
+  },
+  {
+   "size": "2x2x3",
+   "hx": 0.2,
+   "hz": 0.2,
+   "arm": "cnnqT",
+   "seed": 0,
+   "missing": false,
+   "E_tail": -23.35054282470773,
+   "E_tail_std": 0.005048974899227209,
+   "Vscore_tail": 0.007855361836551646,
+   "nan_tail": false,
+   "E0": -23.381730558524417,
+   "rel_err": 0.0013984751090695884,
+   "rel_err_tail": 0.0013338505350843804,
+   "F": 0.9952872483272007,
+   "F_trunk": null,
+   "one_minus_F": 0.004712751672799276,
+   "ceiling": 9.694565242558122e-08,
+   "ceiling_kind": "T_gate (signed-a representability)",
+   "mix": -2.5120453715990116,
+   "warm_1mFs": null,
+   "ceiling_T_head": 1.6642165691490947e-06,
+   "T_gate_plus_minus": [
+    9.694565242558122e-08,
+    1.5672709167235135e-06
+   ],
+   "log_mix": -2.5120453715990116,
+   "n_params": 22999,
+   "diverged": false
+  }
+ ],
+ "verdicts": [],
+ "note": "3D fermionic TC 2x2x3 OBC (toric-code-nqs-fsign signbench); dense SR + cosine dt 0.02->0.002, 300 steps, 8192 samples; T = a A_triv + s_pt2 A_top (signed a); rel_err from exact full-sum energy"
+}
