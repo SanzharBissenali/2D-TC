@@ -66,6 +66,7 @@ ARM_BASE = {
                                           # supervised pre-fit (never re-apply
                                           # --mlp_init here)
     'cnnqT': ('combo', False, 'twobranch'),  # arm T: TwoBranchModel
+    'cnnqTp': ('combo', False, 'twobranch'), # arm T+: positive mix a = exp(c) (--mix_positive)
     'cnn': ('combo', False, 'none'),
     'cnnc': ('combo', True, 'none'),
     'plaincnn': ('plain', False, 'none'),
@@ -132,6 +133,7 @@ def run_config(base, is_complex, hx, hz, hy, sp):
         'mlp_hidden': _sp(sp, 'mlp_hidden', 64),
         'mlp_depth': _sp(sp, 'mlp_depth', 2),
         'mix_init': _sp(sp, 'mix_init', 0.05),
+        'mix_positive': bool(_sp(sp, 'mix_positive', False)),
     }
 
 
@@ -196,7 +198,8 @@ def two_branch_head_stripped_fidelity(cfg, geometry, psi_ed, params, N, s_pm):
     a1 = np.real(enumerate_logs(bare, {'params': params['base_triv']}, N))
     a2 = np.real(enumerate_logs(bare, {'params': params['base_top']}, N))
     m = np.maximum(a1, a2)
-    mix = np.asarray(params['mix']).reshape(-1)
+    mix = (np.exp(np.asarray(params['log_mix'])).reshape(-1) if 'log_mix' in params
+           else np.asarray(params['mix']).reshape(-1))
     a_abs = np.abs(np.where(s_pm > 0, mix[0], mix[-1]))
     psi_hs = (a_abs * np.exp(a1 - m)
               + np.exp(a2 - m)).astype(np.complex128)
@@ -332,7 +335,9 @@ def main():
                 # arm T's own F_trunk analogue (head stripped: s -> +1, |a|)
                 # and the trained signed mix a, both read straight from the
                 # loaded checkpoint's params.
-                mix = [float(v) for v in np.asarray(vs.parameters['mix']).reshape(-1)]
+                pm = vs.parameters
+                mix = [float(v) for v in (np.exp(np.asarray(pm['log_mix'])).reshape(-1)
+                                          if 'log_mix' in pm else np.asarray(pm['mix']).reshape(-1))]
                 F_trunk = two_branch_head_stripped_fidelity(
                     cfg, g, psi_ed, vs.parameters, N, head_sign_pm1_all(head, N))
 

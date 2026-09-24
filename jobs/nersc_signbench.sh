@@ -75,6 +75,7 @@ declare -A ARM_FLAGS
 ARM_FLAGS[cnnqM]="--sign_head qec --sign_impl mlp --mlp_hidden 64 --mlp_depth 2 --minsr_mode complex"
 ARM_FLAGS[cnnqMp]="--sign_head qec --sign_impl mlp --mlp_hidden 64 --mlp_depth 2 --minsr_mode complex"  # + --mlp_init below
 ARM_FLAGS[cnnqT]="--sign_head qec --sign_impl twobranch --minsr_mode complex"
+ARM_FLAGS[cnnqTp]="--sign_head qec --sign_impl twobranch --mix_positive --minsr_mode complex"
 for arm in $ARMS; do
     [ -n "${ARM_FLAGS[$arm]+set}" ] || { echo "!!! unknown arm '$arm' (known: ${!ARM_FLAGS[*]})"; exit 1; }
 done

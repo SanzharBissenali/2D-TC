@@ -206,7 +206,7 @@ def main():
                 from model.honeycomb_networks import create_two_branch_model
                 model, base_model = create_two_branch_model(config, geometry, head)
                 print(f"[sign head] qec/twobranch: psi = a A_triv + (-1)^s A_top, "
-                      f"signed mix a init {config.get('mix_init', 0.05)} "
+                      f"{'POSITIVE mix a=exp(c)' if config.get('mix_positive') else 'signed mix a'} init {config.get('mix_init', 0.05)} "
                       f"(a = 0 = head-only arm; a < 0 flips the s=+1 sector instead)")
             else:
                 from model.honeycomb_networks import SignedModel

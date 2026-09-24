@@ -318,11 +318,21 @@ class TwoBranchModel(nn.Module):
     base_top: nn.Module
     head_s01: Any            # QECSignHead.s01 -- static (host) callable
     mix_init: float = 0.05
+    positive_mix: bool = False   # arm T+: a = exp(c), ONE scalar 'log_mix' (init log mix_init)
 
     @nn.compact
     def __call__(self, x):
-        mix = self.param('mix',
-                         lambda key: jnp.full((2,), self.mix_init, dtype=jnp.float64))
+        if self.positive_mix:
+            # The spec's original parameterisation (3D 'T+'): the trivial branch
+            # can only ADD to the head-signed one (a > 0 always), so the s=+1
+            # sector is pinned and the ceiling is T_gate_plus. Kept as a control
+            # because the signed mix flips a < 0 early at every cell (2026-09-24).
+            c = self.param('log_mix',
+                           lambda key: jnp.asarray(jnp.log(self.mix_init), dtype=jnp.float64))
+            mix = jnp.exp(c) * jnp.ones((2,), dtype=jnp.float64)
+        else:
+            mix = self.param('mix',
+                             lambda key: jnp.full((2,), self.mix_init, dtype=jnp.float64))
         a1 = self.base_triv(x)
         a2 = self.base_top(x)
         s01 = jax.pure_callback(
@@ -419,5 +429,6 @@ def create_two_branch_model(config, geometry, head):
     base_triv = create_honeycomb_model(config, geometry)
     base_top = create_honeycomb_model(config, geometry)
     model = TwoBranchModel(base_triv, base_top, head.s01,
-                           mix_init=float(config.get('mix_init', 0.05)))
+                           mix_init=float(config.get('mix_init', 0.05)),
+                           positive_mix=bool(config.get('mix_positive', False)))
     return model, base_triv

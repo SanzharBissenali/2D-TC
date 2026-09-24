@@ -232,6 +232,10 @@ def parse_arguments() -> Dict[str, Any]:
                         help="sign_impl mlp: npz of pretrained MLP params (arm M-pre; written by "
                              "scripts/pretrain_sign_mlp.py, spec in model/sign_mlp_io.py) -- "
                              "replaces the 'mlp' subtree after init")
+    parser.add_argument('--mix_positive', action='store_true',
+                        help="sign_impl twobranch: arm T+ -- a = exp(c) > 0 (one scalar, "
+                             "init log(mix_init)); the signed [a+, a-] default flips negative "
+                             "early at every cell, T+ is the positive-mix control")
     parser.add_argument('--mix_init', type=float, default=0.05,
                         help='sign_impl twobranch: init of the SIGNED real mix scalar a '
                              '(psi = a A_triv + s A_top; 0 = head-only arm, a < 0 makes '
@@ -282,6 +286,7 @@ def parse_arguments() -> Dict[str, Any]:
             'mlp_depth': 2,
             'mlp_init': '',
             'mix_init': 0.05,
+            'mix_positive': False,
             'minsr_mode': '',
             'lr_final_frac': 0.1,
             'optimizer': 'tdvp',
@@ -565,6 +570,7 @@ def create_data_dict(config: Dict[str, Any], gpu_assigned: str, node_assigned: s
             "mlp_depth": [config.get("mlp_depth", 2)],
             "mlp_init": [config.get("mlp_init", "")],
             "mix_init": [config.get("mix_init", 0.05)],
+            "mix_positive": [bool(config.get("mix_positive", False))],
             "minsr_mode": [config.get("minsr_mode", "")],
             "Lx": [config["Lx"]],
             "Ly": [config["Ly"]],

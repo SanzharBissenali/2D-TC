@@ -373,7 +373,7 @@ def run_minsr(
 
     head = _resolve_head(hamiltonian, head)
     _ensure_keys(filename, HEAD_KEYS
-                 + (["mix"] if 'mix' in vstate.parameters else []))
+                 + (["mix"] if ('mix' in vstate.parameters or 'log_mix' in vstate.parameters) else []))
     t_log_prev = time.time()
 
     loop = tqdm(range(n_iter))
@@ -399,6 +399,8 @@ def run_minsr(
                   f"(||dtheta|| = {dtheta_norm}) -- energy {E.mean}", flush=True)
         # two-branch arm T: the signed mix scalar a ('mix'), per step (cheap)
         mix = vstate.parameters.get('mix') if hasattr(vstate.parameters, 'get') else None
+        if mix is None and hasattr(vstate.parameters, 'get') and 'log_mix' in vstate.parameters:
+            mix = np.exp(np.asarray(vstate.parameters['log_mix']))     # T+: report a = exp(c)
         mix = [float(v) for v in np.asarray(mix).reshape(-1)] if mix is not None else None
 
         update_data(filename, [

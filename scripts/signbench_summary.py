@@ -61,7 +61,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.phase4b_summary import load_refs  # noqa: E402  (stdlib-only)
 
-ARMS = ('cnnqM', 'cnnqMp', 'cnnqT')
+ARMS = ('cnnqM', 'cnnqMp', 'cnnqT', 'cnnqTp')
 ARM_LABEL = {'cnnqM': 'M', 'cnnqMp': 'M-pre', 'cnnqT': 'T'}
 _SEED_SUFFIX_RE = re.compile(r'_s(\d+)$')
 RUN_PAT = re.compile(
@@ -156,6 +156,8 @@ def _prior(arm, d, size, hx, hz, pretrain_dir):
         return "random", None
     if arm == 'cnnqT':
         return f"head-only init (mix={_sim_param(d, 'mix_init', 0.05):g})", None
+    if arm == 'cnnqTp':
+        return f"head-only init (positive mix a=exp(c), a0={_sim_param(d, 'mix_init', 0.05):g})", None
     if arm == 'cnnqMp':
         hidden, depth = _sim_param(d, 'mlp_hidden', 64), _sim_param(d, 'mlp_depth', 2)
         pj = os.path.join(pretrain_dir,
@@ -207,7 +209,7 @@ def build_records(size, points, arms, runs, fid, refs, tail,
                           if e_med is not None and e0 not in (None, 0) else None)
                 fr = fid.get((size, hx, hz, 0.0, arm, seed), {})
                 one_minus_f = (1.0 - fr["F"]) if fr.get("F") is not None else None
-                if arm == 'cnnqT':
+                if arm in ('cnnqT', 'cnnqTp'):
                     # plan Sec 7: T's ceiling is T_gate; fall back to the
                     # mwpm 1-F_s (flagged) on signfid JSONs predating it
                     if t_gate is not None:
@@ -224,8 +226,8 @@ def build_records(size, points, arms, runs, fid, refs, tail,
                 # a+ < 0 the s=+1 sector can flip (s=-1 pinned => T_gate_minus
                 # is the operative ceiling), a- > 0 frees s=-1; both free => 0.
                 family, ceiling_used = None, None
-                mix = fr.get("mix") if arm == 'cnnqT' else None
-                if arm == 'cnnqT' and mix is not None:
+                mix = fr.get("mix") if arm in ('cnnqT', 'cnnqTp') else None
+                if arm in ('cnnqT', 'cnnqTp') and mix is not None:
                     a_p, a_m = (mix[0], mix[-1]) if isinstance(mix, list) else (mix, mix)
                     if a_p < 0 and a_m < 0:
                         family, ceiling_used = "minus-pinned", t_minus
