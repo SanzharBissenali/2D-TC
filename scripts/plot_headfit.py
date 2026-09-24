@@ -31,6 +31,7 @@ Example:
 import argparse
 import json
 import os
+import re
 
 import matplotlib
 matplotlib.use("Agg")
@@ -41,10 +42,10 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _label_for(path, record):
-    hidden, depth = record.get("hidden"), record.get("depth")
-    if hidden is not None and depth is not None:
-        return f"h{hidden}d{depth}"
-    return os.path.splitext(os.path.basename(path))[0]
+    """'<Lx>x<Ly> h<hidden>d<depth>' from the file name (falls back to the stem)."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    m = re.search(r"hc(\d+x\d+)_head_h(\d+)d(\d+)", stem)
+    return f"{m.group(1)} h{m.group(2)}d{m.group(3)}" if m else stem
 
 
 def _infer_tag(records):
@@ -119,7 +120,7 @@ def main():
         for kk in k_keys:
             ys = [c_.get("val_err_per_k", {}).get(kk, np.nan) for c_ in curve]
             ax0.plot(steps, ys, color=c, lw=0.6, alpha=0.35)
-    ax0.set_yscale("log"); ax0.set_xscale("symlog", linthresh=100)
+    ax0.set_yscale("log"); ax0.set_xscale("symlog", linthresh=100); ax0.set_xlim(left=0)
     ax0.set_xlabel("step")
     ax0.set_ylabel("held-out sign error (unweighted)")
     ax0.set_title("(a) held-out sign error vs step (thin = per-k)")
