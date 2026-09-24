@@ -255,12 +255,11 @@ def fit_mlp(X, w, y, hidden, depth, lr, epochs, target, seed,
 # =====================================================================
 
 def _pack_bits(bits):
-    """(n, N) uint8 {0,1} rows -> (n,) int64 codes (N <= 62, the same
-    int64-packing limit noted in model/decoders.py)."""
-    N = bits.shape[1]
-    assert N <= 62, "bit packing needs N <= 62 (see model/decoders.py)"
-    w = (1 << np.arange(N, dtype=np.int64))
-    return (bits.astype(np.int64) * w[None, :]).sum(axis=1)
+    """(n, N) uint8 {0,1} rows -> (n,) opaque row keys for np.unique / np.isin
+    (bytes-packed rows viewed as one fixed-width void per row; no width limit,
+    unlike the int64 packing in model/decoders.py)."""
+    packed = np.ascontiguousarray(np.packbits(bits.astype(np.uint8), axis=1))
+    return packed.view(np.dtype((np.void, packed.shape[1]))).reshape(-1)
 
 
 def _draw_closed_loop_plus_k(geometry, head, n, k_max, rng):
@@ -325,10 +324,10 @@ def synthetic_dataset(geometry, head, n_train, n_val, k_max, seed,
         ks_all = (np.concatenate(have_ks, axis=0) if have_ks
                   else np.zeros(0, dtype=np.int64))
         codes_all = (np.concatenate(have_codes, axis=0) if have_codes
-                     else np.zeros(0, dtype=np.int64))
+                     else exclude_codes[:0])
         return bits_all, ks_all, codes_all
 
-    empty = np.zeros(0, dtype=np.int64)
+    empty = _pack_bits(np.zeros((0, geometry.N), dtype=np.uint8))
     train_bits, train_ks, train_codes = fill(n_train, empty)
     val_bits, val_ks, val_codes = fill(n_val, train_codes)
     assert not np.isin(val_codes, train_codes, assume_unique=True).any(), \
