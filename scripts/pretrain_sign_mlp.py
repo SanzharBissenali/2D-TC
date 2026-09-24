@@ -537,7 +537,7 @@ def ed_targets(geometry, hx, hz, tol=0.0):
     return w.astype(np.float64), y, float(evals[0])
 
 
-def grade_snapshots(g, steps, snapshots, ed_points_str, tol, feature_chunk):
+def grade_snapshots(g, steps, snapshots, ed_points_str, tol, feature_chunk, max_snapshots=25):
     """{'hx:hz' -> {hx, hz, E0, head_ceiling, curve:[{step, ed_err}]}} for
     every comma-separated 'hx:hz' token in ed_points_str, against the
     snapshot set {step: flat _SignMLP param dict}. Also prints, per point,
@@ -546,9 +546,27 @@ def grade_snapshots(g, steps, snapshots, ed_points_str, tol, feature_chunk):
     1-F_s in results/diagnostics/signfid_hc*.json -- printed side by side
     with the MLP's achieved error for a direct sanity cross-check)."""
     N = g.N
-    X_all, head = build_features_all(g, chunk=feature_chunk)
+    X_all, head = build_features_all(g, chunk=feature_chunk)          # uint8, kept as such
     head_sign_all = head.poly_sign01(X_all[:, N:]).astype(np.float64) * -2.0 + 1.0
-    Xf = X_all.astype(np.float64)
+    # Grade a log-spaced subset of the snapshots (801 x 2^27 rows is hours of
+    # numpy), and stream the forward pass in row chunks: a 2^27 x hidden
+    # float64 activation is ~70 GB, which OOM-killed the first attempt.
+    avail = np.array(sorted(int(k) for k in snapshots))
+    if len(avail) > max_snapshots:
+        targets = np.concatenate([[avail[0]], np.geomspace(max(avail[1], 1), avail[-1],
+                                                             num=max_snapshots - 1)])
+        steps = sorted(set(int(avail[np.abs(avail - t).argmin()]) for t in targets))
+    else:
+        steps = [int(v) for v in avail]
+    print(f"# grading {len(steps)} snapshots: {steps[:5]} ... {steps[-3:]}", flush=True)
+    rows = X_all.shape[0]
+    chunk_rows = 1 << 20
+    mlp_signs = np.empty((len(steps), rows), dtype=np.int8)
+    for lo in range(0, rows, chunk_rows):
+        Xc = X_all[lo:lo + chunk_rows].astype(np.float64)
+        for si, step in enumerate(steps):
+            mlp_signs[si, lo:lo + chunk_rows] = np.sign(mlp_forward_numpy(snapshots[step], Xc))
+    del X_all
 
     points = []
     for tok in ed_points_str.split(","):
@@ -565,12 +583,8 @@ def grade_snapshots(g, steps, snapshots, ed_points_str, tol, feature_chunk):
         head_ceiling = float((w * (head_sign_all != y)).sum())
         print(f"# head ceiling (1-F_s) at hx={hx} hz={hz}: {head_ceiling:.6e} "
               f"(cf. results/diagnostics/signfid_hc*.json)", flush=True)
-        curve = []
-        for step in steps:
-            m = mlp_forward_numpy(snapshots[step], Xf)
-            mlp_sign = np.sign(m)
-            err = float((w * (mlp_sign != y)).sum())
-            curve.append({"step": int(step), "ed_err": err})
+        curve = [{"step": int(step), "ed_err": float((w * (mlp_signs[si] != y)).sum())}
+                 for si, step in enumerate(steps)]
         print(f"#   step {steps[-1]}: ed_err={curve[-1]['ed_err']:.6e} "
               f"(head_ceiling {head_ceiling:.6e})", flush=True)
         results[f"{hx:g}:{hz:g}"] = {"hx": hx, "hz": hz, "E0": E0,
