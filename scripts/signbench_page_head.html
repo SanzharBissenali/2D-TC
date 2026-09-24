@@ -1,0 +1,31 @@
+<title>Sign-Head Benchmark Grid</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--bg:#FAFAF7;--ink:#1F2328;--muted:#6B7280;--accent:#1F8A7A;--code:#F1F1EC;--line:#DAD9D2;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#15171A;--ink:#E6E6E0;--muted:#9AA0A6;--accent:#4FC3AF;--code:#1E2126;--line:#33373D;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15171A;--ink:#E6E6E0;--muted:#9AA0A6;--accent:#4FC3AF;--code:#1E2126;--line:#33373D;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.5;padding-block:32px;padding-inline:16px}
+main{max-width:960px;margin:0 auto;display:grid;gap:28px}
+h1{font-size:1.6rem;margin:0;text-wrap:balance} h2{font-size:1.1rem;margin:0 0 8px;color:var(--accent);letter-spacing:.02em;text-transform:uppercase;font-size:.85rem}
+p{margin:0;max-width:70ch} .muted{color:var(--muted)}
+img{max-width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:4px;background:#fff}
+.tbl{overflow-x:auto} table{border-collapse:collapse;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.82rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+th,td{padding:4px 10px;border-bottom:1px solid var(--line);text-align:right} th{color:var(--muted);font-weight:500} td:nth-child(3){color:var(--accent);font-weight:500}
+pre{background:var(--code);border:1px solid var(--line);border-radius:4px;padding:12px 14px;overflow-x:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.8rem;line-height:1.45;margin:0 0 12px}
+code{font-family:inherit} .path{font-family:"IBM Plex Mono",monospace;font-size:.85rem}
+table.arch{white-space:normal;font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:.85rem} table.arch td{text-align:left;vertical-align:top;max-width:26ch} table.arch td:first-child{color:var(--muted)} table.arch td:nth-child(3){color:inherit;font-weight:400}
+</style>
+<main>
+<div><h1>Learned vs gated sign head — 3×3 field grid</h1>
+<p class=muted>Doubled semion, 2×3 honeycomb (27 qubits), h<sub>x</sub> ∈ {0.4, 0.8, 1.2} × h<sub>z</sub> ∈ {0, 0.2, 0.4}. Arms share trunk, optimizer, sampler and the 350-step budget. <b>M</b>: ψ = A·tanh(MLP(ε,x)), sign learned from the energy. <b>M-pre</b>: same, MLP pre-fit to the ED signs at that point. <b>T</b>: ψ = a<sub>s</sub>·A<sub>triv</sub> + s<sub>head</sub>·A<sub>top</sub>, deterministic head, no learned sign. Notebook: <span class=path>analysis/07_signbench_heatmaps.ipynb</span> (branch <span class=path>learned-sign-head</span>).</p></div>
+<section><h2>The three architectures</h2>
+<p>All arms share the <b>positive Combo trunk</b> A(σ) &gt; 0 (local CNN → Wilson vertex tokens Q<sub>v</sub> → all-to-all invariant CNN → exp), the Phase-3 recipe (minSR, lr 0.01, diag-shift 6e-5, 8192 samples, 350 steps, seed 0) and one <b>deterministic feature map</b> σ → (ε, x): read the Q<sub>v</sub> syndrome, pair defects with MWPM → recovery ε, repair r = σ ⊕ ε (closed-loop sector), solve x = G<sup>−1</sup>r over GF(2) — x<sub>p</sub> ∈ {0,1} marks which hexagons were flipped from all-up to reach r. (ε, x) determines σ, so every arm sees the full configuration in decoder coordinates.</p>
+<div class=tbl><table class=arch><thead><tr><th></th><th>M</th><th>M-pre</th><th>T</th></tr></thead><tbody>
+<tr><td>wavefunction</td><td>ψ = A(σ)·tanh(m<sub>θ</sub>(ε, x))</td><td>same as M</td><td>ψ = a<sub>s(σ)</sub>·A<sub>triv</sub>(σ) + s(σ)·A<sub>top</sub>(σ)</td></tr>
+<tr><td>sign source</td><td>MLP 33→64→64→1 (tanh); sign = sign(m)</td><td>same MLP</td><td>closed form s = (−1)<sup>poly(x)</sup>, poly = Σx<sub>p</sub> + Σ<sub>edge pairs</sub>x<sub>p</sub>x<sub>q</sub> + Σ<sub>vertex triples</sub>x<sub>p</sub>x<sub>q</sub>x<sub>r</sub> (= loop parity of r)</td></tr>
+<tr><td>trainable sign?</td><td>yes — from the energy alone</td><td>yes — warm-started</td><td>no — head fixed; two positive trunks + a<sub>+</sub>, a<sub>−</sub> (one per head sector, init +0.05) decide per configuration how much head-signed vs plain-positive branch to use</td></tr>
+<tr><td>init</td><td>positive ansatz (tanh(1) everywhere)</td><td>MLP pre-fit to the exact ED signs at the same point (|ψ<sub>ED</sub>|²-weighted BCE, best of ≤3000 epochs)</td><td>≈ head-only arm (a = 0.05)</td></tr>
+<tr><td>params (2×3)</td><td>25,418</td><td>25,418</td><td>38,036 (two trunks)</td></tr>
+<tr><td>ceiling</td><td>0</td><td>0</td><td>T<sub>gate</sub>: ED weight the two positive trunks cannot re-sign, min over the two head sectors</td></tr>
+</tbody></table></div>
+<p class=muted>Reading guide: M — can VMC <i>discover</i> the sign? M-pre — can it <i>keep</i> a correct sign it was handed? T — does a deterministic prior plus a learned per-configuration gate suffice, including past the crossover (h<sub>x</sub> ≈ 1.1) where the head alone is wrong and a &lt; 0 lets the trivial branch take over?</p></section>

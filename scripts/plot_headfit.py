@@ -117,7 +117,10 @@ def main():
         ax0.plot(steps, val_err, color=c, lw=2, label=f"{lab} held-out")
         tr = [r.get("train_err") for r in curve]
         if all(v is not None for v in tr):
-            ax0.plot(steps, tr, color=c, lw=1.4, ls="--", label=f"{lab} train")
+            ax0.plot(steps, tr, color=c, lw=1.4, ls="--", label=f"{lab} train err")
+        else:   # older curves: minibatch BCE loss (ln 2 = 0.693 at chance)
+            ax0.plot(steps, [r["train_loss"] for r in curve], color=c, lw=1.2, ls=":",
+                     label=f"{lab} train loss (BCE)")
         k_keys = sorted({k for c_ in curve for k in c_.get("val_err_per_k", {})},
                         key=lambda s: int(s))
         for kk in k_keys:
