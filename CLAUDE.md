@@ -970,6 +970,13 @@ fidelity) × 3 arms, 2D DS 2×3 (this repo) + 3D fTC 2×2×3 (peer repo `toric-c
   s/step at 2×3 before trusting chunk walltimes.
 - **Rule (user, 2026-09-23):** NO local training/smoke and no local netket install — smoke on debug QOS
   or very short submits only. Before any experiment submission: 2–3 independent adversarial agents.
+- **Gotcha — Slurm snapshots the job SCRIPT at `sbatch` time:** rewriting a wrapper (e.g. new
+  env/flag semantics) does NOT reach already-queued jobs, which then run the OLD wrapper against
+  the NEW python (2026-09-24: 8 queued pretraining jobs died on `--target 1e-5`). After changing
+  a job script, cancel+resubmit anything still pending that uses it. (Python files ARE read at
+  start, hence the separate "never sync while jobs are pending" rule.)
+- **Gotcha — `cluster.sh fetch` silently stops committing new untracked results** once the
+  cluster branch has commits origin lacks (rebase step); scp the file and commit locally.
 - **Status (2026-09-24 overnight, user autonomy):** post-fix smoke + 2×3 timing smoke on debug,
   9-point sign_fidelity (T_gate) + 2×3 pretraining on regular; production 27 runs + fidelities follow.
 
