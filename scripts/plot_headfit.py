@@ -119,7 +119,7 @@ def main():
         for kk in k_keys:
             ys = [c_.get("val_err_per_k", {}).get(kk, np.nan) for c_ in curve]
             ax0.plot(steps, ys, color=c, lw=0.6, alpha=0.35)
-    ax0.set_yscale("log")
+    ax0.set_yscale("log"); ax0.set_xscale("symlog", linthresh=100)
     ax0.set_xlabel("step")
     ax0.set_ylabel("held-out sign error (unweighted)")
     ax0.set_title("(a) held-out sign error vs step (thin = per-k)")
@@ -146,7 +146,7 @@ def main():
             if ceiling is not None:
                 ax.axhline(ceiling, color="k", ls="--", lw=1,
                           label="head ceiling (1-F_s)")
-            ax.set_yscale("log")
+            ax.set_yscale("log"); ax.set_xscale("symlog", linthresh=100)
             ax.set_xlabel("step")
             if j == 0:
                 ax.set_ylabel("ED-weighted sign error")
