@@ -187,3 +187,10 @@ parity-hardness argument is wrong and that is the headline instead.
   state at step 0 (34% minority sign, 16% of configs suppressed >10×) — a handicap
   unrelated to the question. The last MLP layer is zero-kernel / bias +1, so M
   starts at `A·tanh(1)` (no sign information) and M-pre's npz overrides it.
+- **Family selection (2026-09-24, both repos):** the trained mixes go NEGATIVE within
+  ~25 steps at every cell (2D: both a₊ and a₋; 3D: the single a), so T always trains in
+  the `s=−1`-pinned family. Its operative ceiling is therefore `T_gate_minus`, not
+  `min(T_gate±)`: right on the `h_z=0` line, 4–35× worse than the plus family at `h_z>0`
+  ((1.2,0.4): 4.6e-2 vs 1.3e-3; T achieved 1.2e-1). Summary now reports `family` and
+  `ceiling_used`; the early sign of a is a dynamics artefact (peer controls H: a=0 and T⁺: a>0
+  queued in 3D).

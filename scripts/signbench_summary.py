@@ -181,6 +181,7 @@ def build_records(size, points, arms, runs, fid, refs, tail,
         ref = refs.get((size, hx, hz), {})
         e0, f_s = ref.get("E0"), ref.get("F_s")
         t_gate = ref.get("T_gate")
+        t_plus, t_minus = ref.get("T_gate_plus"), ref.get("T_gate_minus")
         for arm in arms:
             seeds = {0} | {s for (sz, hhx, hhz, a, s) in runs
                           if (sz, hhx, hhz, a) == (size, hx, hz, arm)}
@@ -196,6 +197,7 @@ def build_records(size, points, arms, runs, fid, refs, tail,
                        "nan_tail": False, "E0": e0, "rel_err": None,
                        "F": None, "F_trunk": None, "one_minus_F": None,
                        "ceiling": None, "ceiling_kind": None, "mix": None,
+                       "family": None, "ceiling_used": None,
                        "n_params": None, "prior": None, "warm_1mFs": None}
                 if path is None:
                     records.append(rec)
@@ -218,6 +220,23 @@ def build_records(size, points, arms, runs, fid, refs, tail,
                     ceiling, ceiling_kind = 0.0, "exact-0"
                 else:
                     ceiling, ceiling_kind = None, None
+                # Which head sector the trained [a+, a-] leaves flippable: with
+                # a+ < 0 the s=+1 sector can flip (s=-1 pinned => T_gate_minus
+                # is the operative ceiling), a- > 0 frees s=-1; both free => 0.
+                family, ceiling_used = None, None
+                mix = fr.get("mix") if arm == 'cnnqT' else None
+                if arm == 'cnnqT' and mix is not None:
+                    a_p, a_m = (mix[0], mix[-1]) if isinstance(mix, list) else (mix, mix)
+                    if a_p < 0 and a_m < 0:
+                        family, ceiling_used = "minus-pinned", t_minus
+                    elif a_p > 0 and a_m > 0:
+                        family, ceiling_used = "plus-pinned", t_plus
+                    elif a_p < 0 and a_m > 0:
+                        family, ceiling_used = "both-free", 0.0
+                    else:
+                        family = "both-pinned"
+                        ceiling_used = (max(t_plus, t_minus)
+                                        if None not in (t_plus, t_minus) else None)
                 d = json.load(open(path))
                 n_params = _sim_param(d, "n_params")
                 prior, warm = _prior(arm, d, size, hx, hz, pretrain_dir)
@@ -227,7 +246,8 @@ def build_records(size, points, arms, runs, fid, refs, tail,
                     "F": fr.get("F"), "F_trunk": fr.get("F_trunk"),
                     "one_minus_F": one_minus_f, "ceiling": ceiling,
                     "ceiling_kind": ceiling_kind,
-                    "mix": fr.get("mix") if arm == 'cnnqT' else None,
+                    "family": family, "ceiling_used": ceiling_used,
+                    "mix": mix,
                     "n_params": int(n_params) if n_params is not None else None,
                     "prior": prior, "warm_1mFs": warm,
                 })

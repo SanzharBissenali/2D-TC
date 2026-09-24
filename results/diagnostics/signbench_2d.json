@@ -66,6 +66,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -89,6 +91,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "ED-pretrained@point (warm 1-Fs=9.81e-06)",
    "warm_1mFs": 9.813337849440273e-06
@@ -115,6 +119,8 @@
     -0.9906926117292651,
     -0.2515723402954184
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 4.1962616874934975e-07,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -138,6 +144,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -161,6 +169,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "ED-pretrained@point (warm 1-Fs=9.93e-06)",
    "warm_1mFs": 9.925018996881363e-06
@@ -187,6 +197,8 @@
     -1.0449811578008938,
     -0.12348633439598312
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 1.998568935140679e-05,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -210,6 +222,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -233,6 +247,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "ED-pretrained@point (warm 1-Fs=9.60e-06)",
    "warm_1mFs": 9.600608354976004e-06
@@ -259,6 +275,8 @@
     -1.3366666191790069,
     -0.19263847154488975
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 4.085472308488032e-05,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -282,6 +300,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -305,6 +325,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "ED-pretrained@point (warm 1-Fs=3.35e-05)",
    "warm_1mFs": 3.3476667159582085e-05
@@ -331,6 +353,8 @@
     -0.625605351674477,
     -0.42594201358869366
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 4.192001877629453e-05,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -354,6 +378,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -377,6 +403,8 @@
    "ceiling": null,
    "ceiling_kind": null,
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": null,
    "prior": null,
    "warm_1mFs": null
@@ -403,6 +431,8 @@
     -0.5614153306840118,
     -0.6329039600009572
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 0.00271653022146736,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -426,6 +456,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -449,6 +481,8 @@
    "ceiling": null,
    "ceiling_kind": null,
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": null,
    "prior": null,
    "warm_1mFs": null
@@ -475,6 +509,8 @@
     -0.7081244975804751,
     -0.5401037417765593
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 0.003702792062321599,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -498,6 +534,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -521,6 +559,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "ED-pretrained@point (warm 1-Fs=2.64e-04)",
    "warm_1mFs": 0.0002635201769756179
@@ -547,6 +587,8 @@
     -1.6249716395234375,
     -1.599676022884048
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 3.405311207741276e-07,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -570,6 +612,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -593,6 +637,8 @@
    "ceiling": null,
    "ceiling_kind": null,
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": null,
    "prior": null,
    "warm_1mFs": null
@@ -619,6 +665,8 @@
     -1.489417739734296,
     -1.4853056861922767
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 0.004110539620123546,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null
@@ -642,6 +690,8 @@
    "ceiling": 0.0,
    "ceiling_kind": "exact-0",
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": 25418,
    "prior": "random",
    "warm_1mFs": null
@@ -665,6 +715,8 @@
    "ceiling": null,
    "ceiling_kind": null,
    "mix": null,
+   "family": null,
+   "ceiling_used": null,
    "n_params": null,
    "prior": null,
    "warm_1mFs": null
@@ -691,6 +743,8 @@
     -1.5539976682063297,
     -1.5527623923758187
    ],
+   "family": "minus-pinned",
+   "ceiling_used": 0.04571062239631266,
    "n_params": 38036,
    "prior": "head-only init (mix=0.05)",
    "warm_1mFs": null

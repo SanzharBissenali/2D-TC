@@ -39,6 +39,8 @@ def load_refs():
             refs[key] = {"E0": p["E0"], "F_s": p.get("F_s"),
                          "F_plus": p.get("F_plus"),
                          "T_gate": p.get("T_gate"),
+                         "T_gate_plus": p.get("T_gate_plus"),
+                         "T_gate_minus": p.get("T_gate_minus"),
                          "T_gate_branch": p.get("T_gate_branch")}
     for f in glob.glob("results/ed/ed_hc*_ds_*.json"):
         m = re.search(r"ed_hc(\d+x\d+)_ds_hx([\d.]+)_hz([\d.]+)\.json", f)
