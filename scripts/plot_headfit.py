@@ -114,7 +114,10 @@ def main():
         steps = [c["step"] for c in curve]
         val_err = [c["val_err"] for c in curve]
         c = color_of[lab]
-        ax0.plot(steps, val_err, color=c, lw=2, label=f"{lab} (overall)")
+        ax0.plot(steps, val_err, color=c, lw=2, label=f"{lab} held-out")
+        tr = [r.get("train_err") for r in curve]
+        if all(v is not None for v in tr):
+            ax0.plot(steps, tr, color=c, lw=1.4, ls="--", label=f"{lab} train")
         k_keys = sorted({k for c_ in curve for k in c_.get("val_err_per_k", {})},
                         key=lambda s: int(s))
         for kk in k_keys:

@@ -392,6 +392,16 @@ def fit_mlp_head(Xtr, ytr, wtr, ktr, Xval, yval, kval, hidden, depth, lr,
         m = mlp.apply({"params": params}, Xval_d)
         return jnp.sign(m) != yval_d
 
+    # train-side sign error on a FIXED subset of the training set (same size
+    # as val), so train vs held-out curves are directly comparable.
+    n_tr_sub = min(n_train, max(n_val, 1))
+    tr_idx = np.random.default_rng(seed + 2).choice(n_train, size=n_tr_sub, replace=False)
+    Xtr_sub = jnp.asarray(Xtr[tr_idx], dtype=jnp.float64)
+    ytr_sub = jnp.asarray(ytr[tr_idx], dtype=jnp.float64)
+
+    def train_wrong(params):
+        return jnp.sign(mlp.apply({"params": params}, Xtr_sub)) != ytr_sub
+
     rng = np.random.default_rng(seed + 1)   # independent of the init key
     curve, snapshots = [], {}
     best_params, best_err, best_step = params, float("inf"), -1
@@ -404,16 +414,17 @@ def fit_mlp_head(Xtr, ytr, wtr, ktr, Xval, yval, kval, hidden, depth, lr,
             overall = float(wrong.mean()) if n_val else float("nan")
             per_k = {str(kk): float(wrong[kval == kk].mean())
                      for kk in range(k_max + 1) if (kval == kk).any()}
+            train_err = float(np.asarray(train_wrong(pre_params)).mean())
         idx = jnp.asarray(rng.integers(0, n_train, size=batch))
         params, opt_state, loss = train_step(params, opt_state, idx)
         if not report:
             continue
         if overall < best_err:
             best_params, best_err, best_step = pre_params, overall, step
-        curve.append({"step": step, "train_loss": float(loss),
+        curve.append({"step": step, "train_loss": float(loss), "train_err": train_err,
                       "val_err": overall, "val_err_per_k": per_k})
         snapshots[step] = traverse_util.flatten_dict(pre_params, sep="/")
-        print(f"step {step:6d} loss={float(loss):.6e} val_err={overall:.4e} "
+        print(f"step {step:6d} loss={float(loss):.6e} train_err={train_err:.4e} val_err={overall:.4e} "
               f"({time.time() - t0:.0f}s)", flush=True)
 
     summary = {"steps_run": steps, "best_val_err": best_err,
