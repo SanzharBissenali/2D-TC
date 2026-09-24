@@ -27,11 +27,15 @@ def load_refs():
     'T_gate': float|None, 'T_gate_branch': str|None} (T_gate keys are the
     two-branch arm's ceiling, plan Sec 7; None on signfid JSONs predating it)."""
     refs = {}
-    for f in glob.glob("results/diagnostics/signfid_hc*_ds*.json"):
+    for f in sorted(glob.glob("results/diagnostics/signfid_hc*_ds*.json")):
         d = json.load(open(f))
+        if "_hy" in os.path.basename(f) or float(d.get("hy", 0) or 0) != 0:
+            continue                    # hy != 0 gradings (complex H) are not hy = 0 refs
         size = f"{d['Lx']}x{d['Ly']}"
         for p in d["points"]:
             key = (size, round(p["hx"], 6), round(p["hz"], 6))
+            if key in refs and refs[key].get("T_gate") is not None and p.get("T_gate") is None:
+                continue                # keep the grading that carries T_gate
             refs[key] = {"E0": p["E0"], "F_s": p.get("F_s"),
                          "F_plus": p.get("F_plus"),
                          "T_gate": p.get("T_gate"),
