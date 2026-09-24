@@ -62,7 +62,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.phase4b_summary import load_refs  # noqa: E402  (stdlib-only)
 
 ARMS = ('cnnqM', 'cnnqMp', 'cnnqT', 'cnnqTp')
-ARM_LABEL = {'cnnqM': 'M', 'cnnqMp': 'M-pre', 'cnnqT': 'T'}
+ARM_LABEL = {'cnnqM': 'M', 'cnnqMp': 'M-pre', 'cnnqT': 'T', 'cnnqTp': 'T+'}
 _SEED_SUFFIX_RE = re.compile(r'_s(\d+)$')
 RUN_PAT = re.compile(
     r"G-equiv_1_hc(\d+x\d+)_ds_(?:h0|hx([\d.]+)_hz([\d.]+))_"
