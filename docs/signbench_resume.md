@@ -52,3 +52,20 @@ cert lapsed; (0.8,0.4), (1.2,0.2), (1.2,0.4) have no committed E0 in this table 
 are in the new signfid JSONs.)
 Pretrain warm-start quality: (0.4,·) ≤ 1e-5 reached; (0.8,0) 3.3e-5 and (1.2,0) 2.6e-4 hit
 the 3000-epoch cap (recorded in `results/pretrain/*.json`, shown in the prior column).
+
+## State at the second cert lapse (2026-09-25 ~11:40 local)
+
+Done: all 36 2D runs (M/M-pre/T/T+ × 9), all 27 2D fidelities for M/M-pre/T, all
+9 ED/T_gate gradings, head-fit learning curves (2×3/4×4/6×6). 3D: 71/72 records
+on the page. Page: https://claude.ai/artifact/P16a3MrrW8UUzXaWFVeN6N (v37).
+
+Still on the cluster (finish on their own): T+ fidelity jobs 58847316 (hx0.4),
+58848423 (hx0.8), 58848557 (hx1.2, shared) → `results/diagnostics/fidelity_hc2x3_hy0_sb_hx*_Tp.json`;
+ED-weighted head-fit evaluation 58849359 (regular, 3:00) → `results/pretrain/*eval*.json`
+(its log already shows the final-snapshot MLP error == head ceiling at (0.4,0) and (0.8,0.2)).
+
+Resume: renew cert → `scp` those files (or `cluster.sh fetch` after clearing untracked
+upstream-tracked copies, see CLAUDE.md gotcha) → `python scripts/signbench_page.py`
+(runs summary + notebook; needs `scripts/signbench_page_head.html` next to it) →
+republish → `python scripts/plot_headfit.py results/pretrain/mlp_hc2x3_head_h64d2_k12.json
+<eval json> --tag 2x3_ed` for curve (b).
