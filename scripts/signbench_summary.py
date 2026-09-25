@@ -66,7 +66,7 @@ ARM_LABEL = {'cnnqM': 'M', 'cnnqMp': 'M-pre', 'cnnqT': 'T', 'cnnqTp': 'T+'}
 _SEED_SUFFIX_RE = re.compile(r'_s(\d+)$')
 RUN_PAT = re.compile(
     r"G-equiv_1_hc(\d+x\d+)_ds_(?:h0|hx([\d.]+)_hz([\d.]+))_"
-    r"(cnnqMp|cnnqM|cnnqT)(?:_s(\d+))?\.json$")
+    r"(cnnqMp|cnnqM|cnnqTp|cnnqT)(?:_s(\d+))?\.json$")
 
 
 def _strip_seed(token):
