@@ -562,10 +562,32 @@ def grade_snapshots(g, steps, snapshots, ed_points_str, tol, feature_chunk, max_
     rows = X_all.shape[0]
     chunk_rows = 1 << 20
     mlp_signs = np.empty((len(steps), rows), dtype=np.int8)
-    for lo in range(0, rows, chunk_rows):
-        Xc = X_all[lo:lo + chunk_rows].astype(np.float64)
-        for si, step in enumerate(steps):
-            mlp_signs[si, lo:lo + chunk_rows] = np.sign(mlp_forward_numpy(snapshots[step], Xc))
+    try:                                   # GPU forward when jax is around (cluster):
+        import jax, jax.numpy as jnp       # np.tanh over 2^27 x hidden x 23 snapshots is
+        jax.config.update("jax_enable_x64", True)   # >1 h single-threaded on the host
+        stacked = {k: jnp.asarray(np.stack([snapshots[st][k] for st in steps]))
+                   for k in snapshots[steps[0]]}
+        depth = max(int(k.split("/")[0].split("_")[1]) for k in stacked
+                    if k.startswith("Dense_") and k.endswith("/kernel"))
+
+        @jax.jit
+        def fwd_all(Xc):                    # (S, rows_c) signs for all snapshots at once
+            h = jnp.broadcast_to(Xc * 2.0 - 1.0, (len(steps),) + Xc.shape)
+            for i in range(depth):
+                h = jnp.tanh(jnp.einsum("srk,skh->srh", h, stacked[f"Dense_{i}/kernel"])
+                             + stacked[f"Dense_{i}/bias"][:, None, :])
+            out = jnp.einsum("srk,skh->srh", h, stacked[f"Dense_{depth}/kernel"]) \
+                + stacked[f"Dense_{depth}/bias"][:, None, :]
+            return jnp.sign(out[..., 0]).astype(jnp.int8)
+        chunk_rows = 1 << 18
+        for lo in range(0, rows, chunk_rows):
+            Xc = jnp.asarray(X_all[lo:lo + chunk_rows], dtype=jnp.float64)
+            mlp_signs[:, lo:lo + chunk_rows] = np.asarray(fwd_all(Xc))
+    except ImportError:
+        for lo in range(0, rows, chunk_rows):
+            Xc = X_all[lo:lo + chunk_rows].astype(np.float64)
+            for si, step in enumerate(steps):
+                mlp_signs[si, lo:lo + chunk_rows] = np.sign(mlp_forward_numpy(snapshots[step], Xc))
     del X_all
 
     points = []
