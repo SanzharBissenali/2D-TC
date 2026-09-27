@@ -147,21 +147,21 @@ def main():
                 curve = pt["curve"]
                 steps = [c["step"] for c in curve]
                 errs = [c["ed_err"] for c in curve]
-                ax.plot(steps, errs, color=color_of[lab], lw=1.6, label=lab)
+                ax.plot(steps, errs, color=color_of[lab], lw=1.6, label="fitted MLP")
                 if ceiling is None:
                     ceiling = pt["head_ceiling"]
             if ceiling is not None:
                 ax.axhline(ceiling, color="k", ls="--", lw=1,
                           label="head ceiling (1-F_s)")
-            ax.set_yscale("log"); ax.set_xscale("symlog", linthresh=100)
+            ax.set_yscale("log"); ax.set_xscale("symlog", linthresh=100); ax.set_xlim(left=0)
             ax.set_xlabel("step")
             if j == 0:
                 ax.set_ylabel("ED-weighted sign error")
             hx_s, hz_s = tok.split(":")
-            ax.set_title(f"hx={hx_s}, hz={hz_s}", fontsize=9)
+            ax.set_title(f"hx={hx_s}, hz={hz_s}", fontsize=9, pad=2)
             ax.legend(fontsize=7)
-        fig.suptitle("(b) ED-weighted true-sign error vs step "
-                     "(dashed = head ceiling)", y=0.47, fontsize=10)
+        fig.text(0.5, 0.5, "(b) ED-weighted true-sign error vs step (dashed = head ceiling)",
+                 ha="center", va="bottom", fontsize=10)
 
     fig.tight_layout()
 
