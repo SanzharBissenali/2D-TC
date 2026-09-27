@@ -977,6 +977,30 @@ fidelity) × 3 arms, 2D DS 2×3 (this repo) + 3D fTC 2×2×3 (peer repo `toric-c
   start, hence the separate "never sync while jobs are pending" rule.)
 - **Gotcha — `cluster.sh fetch` silently stops committing new untracked results** once the
   cluster branch has commits origin lacks (rebase step); scp the file and commit locally.
+- **RESULT (2026-09-27; 2D 2×3 grid COMPLETE, 4 arms × 9 cells, rel-err + exact 1−F; 3D 2×2×3
+  complete in the peer repo, 4 arms × 9 × 2 seeds; page https://claude.ai/artifact/P16a3MrrW8UUzXaWFVeN6N,
+  data results/diagnostics/signbench_{2d,3d}.json, notebook analysis/07):** (1) M-cold FAILS wherever
+  the state has non-trivial signs (1−F 0.16–0.78 in 2D topological/crossover, 0.53 in 3D weak field,
+  both seeds), converging to wrong-sign low-energy states (V-score 3.5e-5 at 3% energy error) —
+  the parity-hardness prediction held on every cell. (2) M-pre (MLP pre-fit to ED signs at the
+  point) is best-or-tied at 8/9 2D cells (6e-4…2e-2) and seed-stable in 3D: the MLP can HOLD a
+  sign, it cannot FIND one. (3) T family (deterministic head + learned per-config gate): ≈ the
+  head-only floor in the topological phase; at the crossover every T run with a>0 goes BELOW the
+  head ceiling (the gate works). Gate parameterisation is dimension-dependent: signed [a+,a−]
+  flips negative early (2D: every cell ⇒ minus-pinned family, wrong at h_z>0, e.g. (1.2,0.4)
+  1.2e-1 vs other-family ceiling 1.3e-3; 3D: seed-dependent, 16–100× losses when it flips);
+  positive a=e^c never fails in 3D (random-init trunks) but in 2D collapses to a≈6e-4 past the
+  crossover (identity-init trunks, ratio≈1) ⇒ wrong head-only state, 1−F 0.42/0.999/0.19 at
+  h_x=1.2. (4) ED-free head-trained MLP reproduces the head EXACTLY (ED-weighted error == 1−F_s
+  at all 3 graded points, incl. where the head is wrong); zero held-out error only where the
+  x-table is memorisable (2×3; 4×4 at 99.8% coverage), CHANCE at 6×6 (F=36) after 40k steps ⇒ a
+  transferable learned sign layer must be a fixed-degree GF(2) polynomial layer (cubic 2D /
+  bilinear 3D), not an MLP. Verdict: compute the sign, learn the amplitudes and a per-config
+  gate; next design = T+ with random-init/unshared trunks in 2D, or signed a with controlled
+  early dynamics. Arm token cnnqTp (--mix_positive) exists; the summary reports family/
+  ceiling_used. Ops: shared -G 2 -c 64 (~110 GB) suffices for 2^27 h_x≤0.8 ED/fidelity builds
+  but OOMs at h_x=1.2 (use regular); the 2^27 ED solve takes 21–38 min at h_x≥0.8 (budget 3 h
+  for 3 points); numpy tanh over 2^27×hidden is >1 h — use the jax path in --eval_only.
 - **Status (2026-09-24 overnight, user autonomy):** post-fix smoke + 2×3 timing smoke on debug,
   9-point sign_fidelity (T_gate) + 2×3 pretraining on regular; production 27 runs + fidelities follow.
 
