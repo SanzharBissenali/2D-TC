@@ -1004,6 +1004,24 @@ fidelity) × 3 arms, 2D DS 2×3 (this repo) + 3D fTC 2×2×3 (peer repo `toric-c
 - **Status (2026-09-24 overnight, user autonomy):** post-fix smoke + 2×3 timing smoke on debug,
   9-point sign_fidelity (T_gate) + 2×3 pretraining on regular; production 27 runs + fidelities follow.
 
+- **Supervised sign-learnability test (2026-09-29→30, `scripts/sign_learn_split.py`, `jobs/nersc_signlearn.sh`,
+  `analysis/08_sign_learnability.ipynb`, data `results/signlearn/`):** NO VMC — the arm-M MLP is fit to sign
+  labels (weighted CE, full-batch Adam lr 1e-2), 5-fold CV, `random` (configs held out) vs `pattern` (whole
+  x-patterns held out) splits. Sources: `ed` (top-n |ψ_ED|² configs, exact sign), `head` (synthetic closed-loop
+  ⊕ k flips, head sign), `xsyn` (x-only inputs, label = Levin–Gu poly, `--degree 3/2/1`). **RESULT (head labels,
+  n=200k, 10k steps, width 128):** held-out-pattern error 0.24 (3×3, const-guess 0.36: memorises), **2e-4 (4×4:
+  genuinely generalises, NOT a lookup)**, 0.50 at 5×5/6×6 with train error still 2–5%. So "MLP cannot learn it"
+  is NOT established; the F=16→25 jump is confounded with sample count/coverage (4.8% of 2^25 even at n=2M),
+  and an exact GF(2) cubic solve needs only ~3k (5×5) / ~9k (6×6) samples. The follow-up sweep (x-only n*(F),
+  degree ladder, width 512, pre-registered reading in notebook 08) is the test. Gotchas: a random split over
+  configs is a memorisation test only where patterns repeat (F≲16); reviewers found `synthetic_dataset`
+  (pretrain_sign_mlp.py) keeps the lexicographically smallest codes per round ⇒ biased links (2×3: P(link0)=0.39)
+  — `sign_learn_split.head_dataset` dedups in draw order instead; ED at h_z>0 has x=0 carrying 68–92% of the
+  weight, so report the pattern-balanced error; `--export` cannot carry commas (use `+`, the wrapper converts,
+  incl. `SPLITS=random+pattern`); the debug QOS accepted only 3 of 6 simultaneous submissions; a 2-GPU 2.5 h
+  shared request sat pending >9 h while 1-GPU jobs ran — split into short single-point jobs. Local machine OOM
+  kills background pollers and wipes the scratchpad: keep generators in the repo, not only in scratch.
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the
