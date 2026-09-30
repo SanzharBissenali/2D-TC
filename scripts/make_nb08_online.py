@@ -6,7 +6,7 @@ M, C = nbf.v4.new_markdown_cell, nbf.v4.new_code_cell
 cells = []
 cells.append(M(r"""# Can an MLP learn the doubled-semion sign? — online learning, no fixed training set
 
-Pure supervised learning, no VMC and no energy. The arm-M network `m_θ(ε, x)` (tanh MLP `N+F → 128 → 128 → 1`, float64) is trained by cross-entropy on the sign, **with a fresh minibatch (4,096 samples) at every Adam step (lr 1e-3)** — it never sees a training sample twice. The training loss is therefore itself a measurement on unseen data; the validation set is a fixed draw that the training stream can never produce.
+Pure supervised learning, no VMC and no energy. The arm-M network `m_θ(ε, x)` (tanh MLP `N+F → 128 → 128 → 1`, float64) is trained by cross-entropy on the sign, **with a fresh i.i.d. minibatch (4,096 samples) at every Adam step (lr 1e-3)** — there is no fixed training pool. Where the configuration space is huge (F ≥ 16) a fresh batch is essentially all-new, so the training loss is itself a measurement on unseen data; where it is small (2×3, small F) repeats occur (see the caveat below). The validation set is a fixed draw that the training stream can never produce.
 
 **Input** `σ → (ε, x)`: MWPM recovery bits `ε` (N) and hexagon-flip bits `x` (F, one per hexagon: was it flipped to reach the repaired configuration). `(ε, x)` determines `σ`. The sign is (to 1e-6…1e-3 of the weight) a function of `x` alone, `(−1)^poly(x)`, the Levin–Gu cubic.
 
@@ -20,6 +20,8 @@ Pure supervised learning, no VMC and no energy. The arm-M network `m_θ(ε, x)` 
 **Data.** *Figure 1* (27 qubits, 2×3): configurations drawn i.i.d. from the exact `|ψ_ED|²` at three field points in the topological phase, labelled with the exact ground-state sign. *Figure 2* (3×3 … 6×6): no ED exists, so the label is the head sign (exact on the `h_x = 0` line, a proxy elsewhere); configurations are a uniformly random closed-loop set plus `k ≤ 2F` random link flips. Both: fresh i.i.d. draws, no repetition control.
 
 **Reading the plots.** x-axis = fresh samples seen (= steps × 4096). Thin lines = the three network initialisations (they share the same data stream); thick = their mean. Train = mean over the steps since the previous point, measured on each batch *before* it is used for the update. Dotted grey = always answer the training-majority sign; dotted green (Figure 1) = the computed head sign.
+
+**What the validation set is for ED (Figure 1).** The held-out side is a hash-defined 20% of configurations (or of `x` patterns), and the heaviest configuration (all-up, 50–70% of the mass) sits on the *training* side. The validation set is therefore the *tail* of `|ψ_ED|²`, and the printed table gives how much probability mass the held-out side carries (`val_side_weight`). Figure 1 measures generalisation to rarer configurations / unseen patterns, not error under the full `|ψ|²`.
 
 **Caveat on the train curve.** It is a held-out estimate only while samples do not repeat. At 2×3 (`2²⁷` configurations, heavy ones drawn many times) and for small F under the pattern split (64 patterns at 2×3) the training stream repeats, so only the validation curve measures generalisation there. The train curve is a window mean of pre-update batch metrics, so it lags the validation curve by about half a window.
 
@@ -39,7 +41,7 @@ name = lambda d: (f"({d['cfg']['hx']:g}, {d['cfg']['hz']:g})" if d['cfg']['sourc
 for d in ed + hd:
     c = d['curve']
     print(f"{d['cfg']['source']:5s} {name(d):22s} {d['split']:8s} complete={d['complete']!s:5s} samples {c['samples'][-1]:.2e}/{d['budget_samples']:.2e} "
-          f"val rows {d['n_val']} ({d['refs']['val_distinct_patterns']} distinct x) "
+          f"val rows {d['n_val']} (held-out mass {100 * d['refs']['val_side_weight']:.1f}%, {d['refs']['val_distinct_patterns']} distinct x) "
           f"{d.get('throughput_samples_per_s', float('nan')):.0f} samples/s, starved {100 * d.get('starved_frac', float('nan')):.0f}%")"""))
 cells.append(C(r"""LOSS = [('train_loss', 'C0', 'train loss (fresh batches)'), ('val_loss', 'C1', 'validation loss')]
 ERR = [('train_err', 'C0', 'train'), ('val_err', 'C1', 'val')]

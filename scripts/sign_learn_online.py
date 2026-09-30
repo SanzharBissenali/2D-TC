@@ -1,8 +1,9 @@
 """Online (streaming) sign-learnability test: can the arm-M MLP m_theta(eps, x)
-learn the doubled-semion sign when it NEVER sees a training sample twice?
+learn the doubled-semion sign from a stream of fresh samples, never a fixed pool?
 
-No VMC, no energy. Every step draws a FRESH minibatch; the validation set is a
-fixed draw that training can never produce (a stateless hash partition of the
+No VMC, no energy. Every step draws a FRESH i.i.d. minibatch (with replacement:
+repeats occur wherever the configuration/pattern space is small -- 2x3 ED, small F);
+the validation set is a fixed draw that training can never produce (a stateless hash partition of the
 stream, see below). Reported: training loss/error (window means over fresh data,
 so themselves a generalisation estimate), validation loss/error, against the
 number of samples seen.
@@ -136,7 +137,9 @@ class Stream:
     def batch(self, rng, B, side):
         Xs, ys, have = [], [], 0
         want_held = side == "val"
-        while have < B:
+        for _round in range(400):
+            if have >= B:
+                break
             n = int(1.4 * (B - have)) + 64
             bits, y = self.raw(rng, n)
             if self.part.kind == "random":
@@ -144,13 +147,25 @@ class Stream:
                 bits, y = bits[m], (None if y is None else y[m])
             X = self.head.features_ex(1.0 - 2.0 * bits.astype(np.float64)).astype(np.uint8)
             if y is None:
-                y = (1 - 2 * self.head.poly_sign01(X[:, self.N:])).astype(np.int8)
+                y = (1 - 2 * self.head.poly_sign01(X[:, self.N:]).astype(np.int64)).astype(np.int8)
             if self.part.kind == "pattern":
                 m = self.part.held(None, X[:, self.N:]) == want_held
                 X, y = X[m], y[m]
             Xs.append(X), ys.append(y)
             have += X.shape[0]
+            drawn = getattr(self, "_drawn", 0) + n
+            self._drawn = drawn
+        if have < B:
+            raise RuntimeError(f"{side} side of the {self.part.kind} split is (nearly) empty: "
+                               f"{have}/{B} rows after 400 rounds of oversampled draws")
         return np.concatenate(Xs)[:B], np.concatenate(ys)[:B].astype(np.int8)
+
+    def side_weight(self, rng, n):
+        """Probability mass of the held-out side under the stream's distribution (Monte Carlo)."""
+        bits, _ = self.raw(rng, n)
+        X = self.head.features_ex(1.0 - 2.0 * bits.astype(np.float64)).astype(np.uint8)
+        m = self.part.held(bits, X[:, self.N:]) if self.part.kind == "random" else self.part.held(None, X[:, self.N:])
+        return float(m.mean())
 
 
 def _worker(cfg, part, wid, q, stop, chunk_rows):
@@ -204,12 +219,17 @@ def train_split(a, cfg, split):
     refs = dict(trainmajority_val_err=float((yv != const).mean()),
                 bestconst_val_err=float(min((yv > 0).mean(), (yv < 0).mean())),
                 val_neg_frac=float((yv < 0).mean()), train_neg_frac=float((yb < 0).mean()),
-                val_distinct_patterns=int(np.unique(pattern_key(Xv[:, N:])).size))
+                val_distinct_patterns=int(np.unique(pattern_key(Xv[:, N:])).size),
+                val_side_weight=st.side_weight(np.random.default_rng([cfg["seed"], 2]), 200000),
+                train_batch_distinct_configs=int(np.unique(config_hash(
+                    ((Xb[:, N:].astype(np.int64) @ st.head._G.T.astype(np.int64)) & 1) ^ Xb[:, :N])).size))
     if cfg["source"] == "ed":
         # head sign vs exact sign on the validation set (sigma = G x XOR eps)
         sig = ((Xv[:, N:].astype(np.int64) @ st.head._G.T.astype(np.int64)) & 1) ^ Xv[:, :N]
         refs["head_val_err"] = float((1 - 2 * st.head.s01(1.0 - 2.0 * sig.astype(np.float64)) != yv).mean())
-    print(f"# split={split}: val {Xv.shape[0]} rows, {refs['val_distinct_patterns']} distinct x patterns, "
+    print(f"# split={split}: val {Xv.shape[0]} rows (held-out side carries {100 * refs['val_side_weight']:.1f}% of the mass), "
+          f"{refs['val_distinct_patterns']} distinct x patterns, "
+          f"{refs['train_batch_distinct_configs']}/{Xb.shape[0]} distinct configs in a 100k train batch, "
           f"const-guess val err {refs['trainmajority_val_err']:.4f}", flush=True)
 
     ctx = mp.get_context("spawn")      # clean interpreters: no fork after jax/CUDA init (2nd split)
