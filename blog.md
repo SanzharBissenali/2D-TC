@@ -556,8 +556,10 @@ branch on costs energy before it pays.
 
 If ED labels are unavailable at scale, could the MLP be pretrained on the head's closed-form sign and
 reused? The fit on synthetic configurations (random closed-loop sets plus k random flips) takes seconds and
-reaches zero held-out error at 2×3 and 4×4. That is memorisation: the sign depends only on x, there are 64
-and 65,536 patterns, and the training set covers 99.8% of them. At 6×6, with 2³⁶ patterns, held-out error
+reaches zero held-out error at 2×3 and 4×4. At 2×3 that is memorisation: the sign depends only on x, there
+are 64 patterns and the training set covers all of them. **Correction (2026-09-30):** I first read 4×4 the
+same way (65,536 patterns, 99.8% covered), but the held-out-pattern test in the next entry shows 4×4 does
+generalise, so that reading was too strong. At 6×6, with 2³⁶ patterns, held-out error
 stays at 0.49 for 40,000 steps. Graded against the true sign at 2×3, the fitted network converges onto the
 head's own ceiling to every printed digit, including 0.156 where the head is wrong. A head-trained MLP is
 the head, and only where the table fits in memory. A transferable learned sign layer has to be the
