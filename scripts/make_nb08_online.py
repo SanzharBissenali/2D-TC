@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 os.chdir(next(p for p in [pathlib.Path.cwd(), *pathlib.Path.cwd().parents] if (p / 'results').is_dir()))
 plt.rcParams.update({'figure.dpi': 120, 'font.size': 10})
 os.makedirs('figures/signlearn', exist_ok=True)
-data = [json.load(open(f)) for f in sorted(glob.glob('results/signonline/signonline_*.json'))]
+data = [json.load(open(f)) for f in sorted(glob.glob('results/signonline/signonline_*.json')) if '_smoke' not in f]
 ed = sorted((d for d in data if d['cfg']['source'] == 'ed'), key=lambda d: (d['cfg']['hx'], d['cfg']['hz']))
 hd = sorted((d for d in data if d['cfg']['source'] == 'head'), key=lambda d: d['F'])
 name = lambda d: (f"({d['cfg']['hx']:g}, {d['cfg']['hz']:g})" if d['cfg']['source'] == 'ed'
