@@ -462,3 +462,112 @@ Separate pathways are needed in only two cases. If the head carries parameters, 
 arm cnnqR, it must be differentiated and so lives in the model. And a parameter-free head emitting general
 phases e^{iφ(σ)} rather than ±1 still frames as H̃ = S†HS, but H̃ is then complex Hermitian even for real H.
 
+
+---
+
+# Can a neural network learn the sign? A benchmark of learned against computed sign heads
+
+*2026-09-18 → 2026-09-29, branch `learned-sign-head`*
+
+The doubled-semion programme closed with a deterministic sign head: read the syndrome, decode it, count
+loops. That head is exact at the fixed point and excellent through the topological phase, but porting the
+loop count to the 3D fermionic code had needed a second-order perturbation-theory decoder, which is the
+opposite of portable. So the question for this entry was the obvious one: replace the hand-built head with
+a *trainable* network fed engineered features, run it in parallel to the approximately symmetric trunk, and
+let it learn the sign. The starting proposal was the simplest version: syndromes in, sign out.
+
+We answered it with a benchmark in two models at once (2D doubled semion here, 3D fermionic toric code in
+the sibling repo), graded by exact fidelity against ED. Everything is on one page:
+https://claude.ai/artifact/P16a3MrrW8UUzXaWFVeN6N. Data: `results/diagnostics/signbench_{2d,3d}.json`;
+notebook: `analysis/07_signbench_heatmaps.ipynb`; spec and amendments: `docs/signhead_benchmark_plan.md`.
+
+## What exact ceilings settled before any training
+
+For any feature map φ(σ), the best fidelity reachable by "positive amplitude × arbitrary function of φ" is
+Σ over feature classes of max(W⁺, W⁻), computable from the ED vector with no training. That oracle decided
+the feature engineering.
+
+- **Syndrome-only features carry no sign information.** The ceiling equals the positive ansatz to 5e-13 at
+  every point. At the fixed point every configuration in the ground state has an empty syndrome and 75% of
+  the weight is negative; MWPM never computed the sign from the syndrome, it only finds the way back to the
+  closed-loop sector.
+- **On the closed-loop sector the sign is a closed form.** (−1)^{#loops} = (−1)^{χ(D)}, the Euler
+  characteristic of the flipped region, which expands to Σx + Σ_{edge pairs} x_p x_q + Σ_{vertex triples}
+  x_p x_q x_r mod 2 in the hexagon-flip variables x: the Levin–Gu Z·CZ·CCZ circuit, verified on every face
+  set from 1×2 to 3×3 and 20,000 random ones at 4×4. The 3D analogue is the peer's bilinear cup form. The
+  loop count never needed a network.
+- **A cheap linear decoder plus a local learned correction does not work.** The anchor decoder's error is
+  non-local; defect-neighbourhood features only recover it when the feature is effectively the whole
+  configuration. What does beat MWPM's ceiling (6× to 10⁴×) is the configuration restricted to the *tie
+  cycle* between two minimal recoveries, which matters in 3D and not in 2D.
+- **At strong field the head fails, and the true sign is the head kept or dropped per configuration.** The
+  best global choice between "head" and "no head" leaves a 1–2% hole at the crossover (2D h_x ≈ 1.09, 3D
+  h_x ≈ 0.57, deepening with size); gates on defect counts do not fill it; an ideal per-configuration
+  keep/drop leaves ≤ 2.6e-4 in 3D. Each negative amplitude crosses zero at its own field.
+
+## The arms
+
+Same positive Combo trunk, optimizer, sampler and 350-step budget; same deterministic feature map σ → (ε, x)
+(MWPM recovery ε, then the GF(2) solve for which hexagons x were flipped to reach the repaired
+configuration). (ε, x) determines σ, so every arm sees everything.
+
+- **M**: ψ = A·tanh(MLP(ε, x)). The sign must be learned from the energy alone.
+- **M-pre**: the same, with the MLP first fitted to the exact ED signs at that very point. A control, not a
+  method: it asks whether VMC can keep a correct sign it was handed.
+- **T**: ψ = a_s·A_triv + s_head·A_top. No learned sign; two positive trunks and a mixing scalar per head
+  sector decide, configuration by configuration, how much of the head-signed branch to use.
+- **T+**: the same with a single positive scalar a = e^c, added after the 3D side found the sign of a matters.
+
+Three adversarial agents attacked the stack before any experiment and found real problems: arm M's all-up
+configuration has all-zero features, so with zero biases the MLP output was exactly zero there, a node on
+the most important configuration; M started from a random-sign state; the pretraining saved the last epoch
+rather than the best; and T's representability ceiling depends on the sign of its mix, with the better sign
+flipping cell by cell.
+
+## Results (2D 2×3, 1−F)
+
+| cell | M | M-pre | T | T+ |
+|---|---|---|---|---|
+| (0.4, 0 / 0.2 / 0.4) | 0.35 / 0.65 / 0.21 | 6.2 / 7.5 / 5.7e-4 | 8.9 / 10.7 / 7.5e-4 | 11.9 / 11.7 / 7.8e-4 |
+| (0.8, 0 / 0.2 / 0.4) | 0.35 / 0.78 / 0.16 | 3.1 / 4.0 / 1.6e-3 | 6.9 / 13.8 / 12.0e-3 | 6.6 / 13.0 / 10.6e-3 |
+| (1.2, 0 / 0.2 / 0.4) | 2.8e-3 / 1.7e-2 / 9.3e-2 | 2.8e-3 / 1.7e-2 / 2.6e-3 | 1.3e-3 / 1.8e-2 / 1.2e-1 | 0.42 / 0.999 / 0.19 |
+
+**A generic network does not discover the sign.** M's states are nearly orthogonal to the truth across the
+topological and crossover columns while its energy error is only 2–5%. Its (0.4, 0.4) run has a V-score of
+3.5e-5 at 3% energy error: it converged tightly onto a wrong-sign state. Only where the ground state is
+already almost positive does M catch up. In 3D it sits at 0.53 on both seeds.
+
+**Handed the sign, the network keeps it.** M-pre is best or tied at eight of nine 2D cells and reproduces
+across seeds in 3D. The MLP has the capacity to hold the sign; it has no route to find it.
+
+**The gate works, and its parameterisation depends on the trunks.** In the topological phase T sits on the
+head-only floor. At the crossover every T-family run whose mix stays positive goes below the head's own
+ceiling, which is the per-configuration keep/drop the oracle predicted. The two parameterisations fail in
+opposite ways. The signed mix flips negative within about 25 steps, in every 2D cell and seed-dependently in
+3D, and then lives in the wrong sector family: (1.2, 0.4) ends at 0.12 against a ceiling of 1.3e-3 for the
+other family. The positive mix never fails in 3D (best or within 2.4× of best at every cell, reproducible
+within 1.3×), but in 2D past the crossover it collapses to a ≈ 6e-4: the positive branch switches off and
+the arm ends as the wrong-signed head alone, down to F = 0.0013 at (1.2, 0.2) with a 3% energy error. The
+difference is the trunks. The 3D trunks are randomly initialised and can make the ratio of the two branches
+large per configuration; ours start at the identity, the ratio is one everywhere, and turning the trivial
+branch on costs energy before it pays.
+
+## The side experiment: pretraining on the formula
+
+If ED labels are unavailable at scale, could the MLP be pretrained on the head's closed-form sign and
+reused? The fit on synthetic configurations (random closed-loop sets plus k random flips) takes seconds and
+reaches zero held-out error at 2×3 and 4×4. That is memorisation: the sign depends only on x, there are 64
+and 65,536 patterns, and the training set covers 99.8% of them. At 6×6, with 2³⁶ patterns, held-out error
+stays at 0.49 for 40,000 steps. Graded against the true sign at 2×3, the fitted network converges onto the
+head's own ceiling to every printed digit, including 0.156 where the head is wrong. A head-trained MLP is
+the head, and only where the table fits in memory. A transferable learned sign layer has to be the
+polynomial itself: cubic with fixed locality in 2D, bilinear in 3D.
+
+## Where this leaves things
+
+Compute the sign; learn the amplitudes and a per-configuration gate. That answers the question the entry
+started with: the network in parallel to the trunk should not output a sign, it should decide how much of a
+computed one to use. Two things are unfinished. The gate's early dynamics need controlling, either a
+positive mix with randomly initialised trunks in 2D or a signed mix held non-negative for the first steps.
+And the 2D grid is a single seed, where the 3D one has two. Operational notes from the campaign (Slurm
+snapshots job scripts at submission; the 2²⁷ builds at h_x = 1.2 need a full node) are in `CLAUDE.md`.
