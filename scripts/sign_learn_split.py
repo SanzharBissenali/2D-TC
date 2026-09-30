@@ -12,6 +12,12 @@ Two data sources
                  with the closed-form head sign, uniform weights. Exact ground
                  truth on the h_x = 0 line; the head's sign elsewhere.
 
+  --source xsyn  (any size, no decoder, no eps): the MLP sees ONLY the F hexagon-
+                 flip bits, x ~ uniform over distinct patterns, label = the
+                 Levin-Gu polynomial (--degree 3, default), its quadratic part
+                 (--degree 2) or full parity sum(x) (--degree 1). Isolates
+                 lattice size / polynomial degree from the eps nuisance inputs.
+
 Two splits of the SAME dataset, each run as --folds-fold cross-validation (every
 configuration / every x pattern is held out exactly once; fold f also seeds the
 MLP init):
@@ -97,6 +103,63 @@ def pattern_ids(X, F):
     keys = packed.view(np.dtype((np.void, packed.shape[1]))).reshape(-1)
     _, inv = np.unique(keys, return_inverse=True)
     return inv.reshape(-1)
+
+
+def xsyn_dataset(head, F, n_data, degree, seed):
+    """n distinct uniform x patterns and y = (-1)^poly_degree(x) (degree 3 = the
+    head polynomial; 2 drops the vertex triples; 1 = parity of sum x)."""
+    rng = np.random.default_rng(seed)
+    n = min(n_data, 2 ** F)
+    if F <= 22:
+        codes = rng.choice(2 ** F, size=n, replace=False)
+        x = ((codes[:, None] >> np.arange(F)) & 1).astype(np.uint8)
+    else:
+        x = np.zeros((0, F), dtype=np.uint8)
+        while x.shape[0] < n:
+            new = rng.integers(0, 2, size=(int(1.2 * (n - x.shape[0])) + 16, F), dtype=np.uint8)
+            x = np.concatenate([x, new], axis=0)
+            _, first = np.unique(np.packbits(x, axis=1).view(np.dtype((np.void, (F + 7) // 8))).reshape(-1),
+                                 return_index=True)
+            x = x[np.sort(first)]
+        x = x[:n]
+    xi = x.astype(np.int64)
+    tot = xi.sum(axis=1)
+    if degree >= 2 and head._pairs.size:
+        tot += (xi[:, head._pairs[:, 0]] * xi[:, head._pairs[:, 1]]).sum(axis=1)
+    if degree >= 3 and head._triples.size:
+        tot += (xi[:, head._triples[:, 0]] * xi[:, head._triples[:, 1]]
+                * xi[:, head._triples[:, 2]]).sum(axis=1)
+    y = (1 - 2 * (tot & 1)).astype(np.int8)
+    if degree == 3:
+        assert (y == 1 - 2 * head.poly_sign01(x).astype(np.int8)).all()
+    return x, y, np.ones(n), dict(degree=degree, n_pairs=int(head._pairs.shape[0]),
+                                 n_triples=int(head._triples.shape[0]))
+
+
+def hamming1_vote(xbits, y, w, val):
+    """Weighted validation error of a Hamming-1 neighbour majority vote over the
+    training patterns (F <= 62), plus the share of validation patterns with >= 1
+    training neighbour. A baseline that interpolates without learning the function."""
+    F = xbits.shape[1]
+    if F > 62:
+        return dict(hamming1_vote_err=None, hamming1_coverage=None)
+    code = (xbits.astype(np.int64) << np.arange(F, dtype=np.int64)).sum(axis=1)
+    tc, ty = code[~val], y[~val].astype(np.int64)
+    tc_u, first = np.unique(tc, return_index=True)
+    lab = ty[first]
+    vc, vy, vw = code[val], y[val], w[val] / w[val].sum()
+    votes = np.zeros(vc.size)
+    hit = np.zeros(vc.size, dtype=bool)
+    for j in range(F):
+        nb = vc ^ (np.int64(1) << j)
+        pos = np.clip(np.searchsorted(tc_u, nb), 0, tc_u.size - 1)
+        ok = tc_u[pos] == nb
+        votes += np.where(ok, lab[pos], 0)
+        hit |= ok
+    const = 1 if ty.sum() >= 0 else -1
+    pred = np.where(votes > 0, 1, np.where(votes < 0, -1, const))
+    return dict(hamming1_vote_err=float(vw[pred != vy].sum()),
+                hamming1_coverage=float(hit.mean()))
 
 
 def make_split(kind, pid, fold, n_folds, rng):
@@ -185,12 +248,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--Lx", type=int, required=True)
     ap.add_argument("--Ly", type=int, required=True)
-    ap.add_argument("--source", choices=["ed", "head"], required=True)
+    ap.add_argument("--source", choices=["ed", "head", "xsyn"], required=True)
     ap.add_argument("--hx", type=float, default=0.0)
     ap.add_argument("--hz", type=float, default=0.0)
     ap.add_argument("--n_data", type=int, default=200000)
     ap.add_argument("--k_max", type=int, default=-1, help="head source; -1 => 2F")
     ap.add_argument("--folds", type=int, default=5, help="k-fold CV => 1/k held out")
+    ap.add_argument("--max_folds", type=int, default=0,
+                    help="run only the first this-many folds of the partition (0 => all)")
+    ap.add_argument("--degree", type=int, default=3, choices=[1, 2, 3], help="xsyn only")
+    ap.add_argument("--tag", default="", help="suffix for the output file name")
     ap.add_argument("--splits", default="random,pattern")
     ap.add_argument("--hidden", type=int, default=64)
     ap.add_argument("--depth", type=int, default=2)
@@ -209,26 +276,32 @@ def main():
     if args.source == "ed":
         bits, y, w, meta = ed_dataset(g, head, args.hx, args.hz, args.n_data)
         src = f"ed_hx{args.hx:g}_hz{args.hz:g}"
-    else:
+    elif args.source == "head":
         k_max = 2 * F if args.k_max < 0 else args.k_max
         bits, y, w, meta = head_dataset(g, head, args.n_data, k_max, seed=0)
         src = f"head_k{k_max}"
-    states = 1.0 - 2.0 * bits.astype(np.float64)
-    X = head.features_ex(states).astype(np.uint8)
-    y_head = (1 - 2 * head.s01(states)).astype(np.int8)
-    # (eps, x) must encode sigma losslessly: sigma = G x XOR eps
-    back = ((X[:, N:].astype(np.int64) @ head._G.T.astype(np.int64)) & 1) ^ X[:, :N]
-    assert (back == bits).all(), "features_ex is not a lossless encoding"
+    else:
+        bits, y, w, meta = xsyn_dataset(head, F, args.n_data, args.degree, seed=0)
+        src = f"xsyn_d{args.degree}"
+    if args.source == "xsyn":
+        X, y_head = bits, y          # MLP input = x only; label is the polynomial itself
+    else:
+        states = 1.0 - 2.0 * bits.astype(np.float64)
+        X = head.features_ex(states).astype(np.uint8)
+        y_head = (1 - 2 * head.s01(states)).astype(np.int8)
+        # (eps, x) must encode sigma losslessly: sigma = G x XOR eps
+        back = ((X[:, N:].astype(np.int64) @ head._G.T.astype(np.int64)) & 1) ^ X[:, :N]
+        assert (back == bits).all(), "features_ex is not a lossless encoding"
     print(f"# {args.Lx}x{args.Ly} N={N} F={F} source={src} n={bits.shape[0]} "
           f"neg weight={float(w[y < 0].sum() / w.sum()):.4f}", flush=True)
 
     os.makedirs(args.out_dir, exist_ok=True)
     path = os.path.join(args.out_dir, f"signlearn_hc{args.Lx}x{args.Ly}_{src}"
-                                      f"_h{args.hidden}d{args.depth}.json")
+                                      f"_h{args.hidden}d{args.depth}{args.tag}.json")
     out = dict(Lx=args.Lx, Ly=args.Ly, N=N, F=F, source=args.source,
                hx=args.hx, hz=args.hz, n_data=int(bits.shape[0]),
                hidden=args.hidden, depth=args.depth, lr=args.lr,
-               steps=args.steps, folds=args.folds, meta=meta, runs=[],
+               steps=args.steps, folds=args.folds, max_folds=args.max_folds, meta=meta, runs=[],
                complete=False)
 
     def dump():                 # atomic, after EVERY fit (walltime-safe)
@@ -248,15 +321,17 @@ def main():
                 f"trainmajority_val_err{tag}": float(wv[yv != tr_major].sum())}
 
     for kind in args.splits.split(","):
-        for fold in range(args.folds):
+        for fold in range(min(args.max_folds or args.folds, args.folds)):
             val, info = make_split(kind, pid, fold, args.folds,
                                    np.random.default_rng(1000))
             wbal = balanced_weights(w[val], pid[val])
+            h1 = hamming1_vote(X[:, -F:], y, w, val)
             wfull = np.zeros_like(w)
             wfull[val] = wbal
             ref = dict(n_train=int((~val).sum()), n_val=int(val.sum()),
                        val_weight_share=float(w[val].sum() / w.sum()),
-                       **refs(w, val, ""), **refs(wfull, val, "_bal"), **info)
+                       n_train_patterns=int(np.unique(pid[~val]).size), input_dim=int(X.shape[1]),
+                       **h1, **refs(w, val, ""), **refs(wfull, val, "_bal"), **info)
             print(f"== split={kind} fold={fold} {ref}", flush=True)
             curve, wrong = fit(X, y, w, wbal, val, args.hidden, args.depth,
                                args.lr, args.steps, args.log_every, fold)
