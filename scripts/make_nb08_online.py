@@ -1,0 +1,115 @@
+"""Regenerates analysis/08_sign_learnability.ipynb (online-learning version) -- unexecuted;
+run `jupyter nbconvert --to notebook --execute --inplace analysis/08_sign_learnability.ipynb`."""
+import nbformat as nbf
+
+M, C = nbf.v4.new_markdown_cell, nbf.v4.new_code_cell
+cells = []
+cells.append(M(r"""# Can an MLP learn the doubled-semion sign? — online learning, no fixed training set
+
+Pure supervised learning, no VMC and no energy. The arm-M network `m_θ(ε, x)` (tanh MLP `N+F → 128 → 128 → 1`, float64) is trained by cross-entropy on the sign, **with a fresh minibatch (4,096 samples) at every Adam step (lr 1e-3)** — it never sees a training sample twice. The training loss is therefore itself a measurement on unseen data; the validation set is a fixed draw that the training stream can never produce.
+
+**Input** `σ → (ε, x)`: MWPM recovery bits `ε` (N) and hexagon-flip bits `x` (F, one per hexagon: was it flipped to reach the repaired configuration). `(ε, x)` determines `σ`. The sign is (to 1e-6…1e-3 of the weight) a function of `x` alone, `(−1)^poly(x)`, the Levin–Gu cubic.
+
+**Two held-out rules (20% held out, fixed for the run, defined by a hash — no stored sets):**
+
+| split | held out | what it tests |
+|---|---|---|
+| `random` | configurations | can it fit the distribution it is trained on (a held-out configuration usually shares its `x` with training rows) |
+| `pattern` | whole `x` patterns | can it predict the sign of hexagon-flip patterns it has never seen |
+
+**Data.** *Figure 1* (27 qubits, 2×3): configurations drawn i.i.d. from the exact `|ψ_ED|²` at three field points in the topological phase, labelled with the exact ground-state sign. *Figure 2* (3×3 … 6×6): no ED exists, so the label is the head sign (exact on the `h_x = 0` line, a proxy elsewhere); configurations are a uniformly random closed-loop set plus `k ≤ 2F` random link flips. Both: fresh i.i.d. draws, no repetition control.
+
+**Reading the plots.** x-axis = fresh samples seen (= steps × 4096). Thin lines = the three network initialisations (they share the same data stream); thick = their mean. Train = mean over the steps since the previous point, measured on each batch *before* it is used for the update. Dotted grey = always answer the training-majority sign; dotted green (Figure 1) = the computed head sign.
+
+**Caveat on the train curve.** It is a held-out estimate only while samples do not repeat. At 2×3 (`2²⁷` configurations, heavy ones drawn many times) and for small F under the pattern split (64 patterns at 2×3) the training stream repeats, so only the validation curve measures generalisation there. The train curve is a window mean of pre-update batch metrics, so it lags the validation curve by about half a window.
+
+Code: `scripts/sign_learn_online.py`, `jobs/nersc_signonline.sh`; data: `results/signonline/`. The earlier fixed-pool (200k samples, full-batch) version is in git history (`0fb1fe6`) and `results/signlearn/`."""))
+cells.append(C(r"""import json, glob, os, pathlib
+import numpy as np
+import matplotlib.pyplot as plt
+
+os.chdir(next(p for p in [pathlib.Path.cwd(), *pathlib.Path.cwd().parents] if (p / 'results').is_dir()))
+plt.rcParams.update({'figure.dpi': 120, 'font.size': 10})
+os.makedirs('figures/signlearn', exist_ok=True)
+data = [json.load(open(f)) for f in sorted(glob.glob('results/signonline/signonline_*.json'))]
+ed = sorted((d for d in data if d['cfg']['source'] == 'ed'), key=lambda d: (d['cfg']['hx'], d['cfg']['hz']))
+hd = sorted((d for d in data if d['cfg']['source'] == 'head'), key=lambda d: d['F'])
+name = lambda d: (f"({d['cfg']['hx']:g}, {d['cfg']['hz']:g})" if d['cfg']['source'] == 'ed'
+                  else f"{d['cfg']['Lx']}×{d['cfg']['Ly']}  (F={d['F']}, N={d['N']})")
+for d in ed + hd:
+    c = d['curve']
+    print(f"{d['cfg']['source']:5s} {name(d):22s} {d['split']:8s} complete={d['complete']!s:5s} samples {c['samples'][-1]:.2e}/{d['budget_samples']:.2e} "
+          f"val rows {d['n_val']} ({d['refs']['val_distinct_patterns']} distinct x) "
+          f"{d.get('throughput_samples_per_s', float('nan')):.0f} samples/s, starved {100 * d.get('starved_frac', float('nan')):.0f}%")"""))
+cells.append(C(r"""LOSS = [('train_loss', 'C0', 'train loss (fresh batches)'), ('val_loss', 'C1', 'validation loss')]
+ERR = [('train_err', 'C0', 'train'), ('val_err', 'C1', 'val')]
+
+
+def panel(ax, d, keys, refs=()):
+    c = d['curve']
+    s = np.array(c['samples'], dtype=float)
+    for key, col, lab in keys:
+        a = np.array(c[key], dtype=float)                   # (points, seeds)
+        ax.plot(s[1:], a[1:] if key.startswith('val') else a[1:], color=col, lw=0.6, alpha=0.3)
+        ax.plot(s[1:], np.nanmean(a[1:], axis=1), color=col, lw=1.8, label=lab)
+    for key, col, lab in refs:
+        if d['refs'].get(key) is not None:
+            ax.axhline(d['refs'][key], color=col, ls=':', lw=1.3, label=lab)
+    ax.set_xscale('log'); ax.set_yscale('symlog', linthresh=1e-6); ax.grid(alpha=0.25)
+
+
+def figure(ds, split, title, fname, refs):
+    ds = [d for d in ds if d['split'] == split]
+    if not ds:
+        return print(f'{fname}: no data yet')
+    fig, axes = plt.subplots(2, len(ds), figsize=(4.3 * len(ds), 6.2), sharex='col', squeeze=False)
+    for j, d in enumerate(ds):
+        panel(axes[0, j], d, LOSS); panel(axes[1, j], d, ERR, refs)
+        axes[0, j].set_title(name(d) + ('' if d['complete'] else '  [partial]')); axes[1, j].set_xlabel('fresh samples seen')
+        axes[1, j].set_ylim(-1e-7, 1.5)
+    axes[0, 0].set_ylabel('cross-entropy loss'); axes[1, 0].set_ylabel('sign error')
+    axes[0, 0].legend(fontsize=8); axes[1, 0].legend(fontsize=7.5, loc='lower left')
+    fig.suptitle(title); fig.tight_layout(); fig.savefig(f'figures/signlearn/{fname}.png', dpi=150); plt.show()
+
+
+REF_ED = [('trainmajority_val_err', 'grey', 'constant guess'), ('head_val_err', 'C2', 'computed head sign')]
+REF_HD = [('trainmajority_val_err', 'grey', 'constant guess')]"""))
+cells.append(M(r"""## Figure 1 — 27 qubits, exact ED labels, three points in the topological phase
+
+Samples drawn from `|ψ_ED|²` (so the plain error is already the ground-state-weighted error). 2×3 has only 64 `x` patterns, so the pattern split holds out 13 of them."""))
+cells.append(C("figure(ed, 'random', 'Online learning, random 20% of configurations held out (ED labels, 2×3)', 'fig1a_ed_random', REF_ED)"))
+cells.append(C("figure(ed, 'pattern', 'Online learning, 20% of x patterns held out (ED labels, 2×3)', 'fig1b_ed_pattern', REF_ED)"))
+cells.append(M(r"""## Figure 2 — beyond ED: 3×3 to 6×6, head-sign labels
+
+Dotted grey = the training-majority constant guess. At 5×5 and 6×6 a fresh sample essentially never repeats an `x` pattern (2²⁵ and 2³⁶ patterns), so every validation row is a new pattern in both splits."""))
+cells.append(C("figure(hd, 'random', 'Online learning, random 20% of configurations held out (head labels)', 'fig2a_head_random', REF_HD)"))
+cells.append(C("figure(hd, 'pattern', 'Online learning, 20% of x patterns held out (head labels)', 'fig2b_head_pattern', REF_HD)"))
+cells.append(M("## Summary — final validation error against system size"))
+cells.append(C(r"""fin = lambda d, k: np.array(d['curve'][k][-1], dtype=float)
+rows = []
+for d in ed + hd:
+    rows.append((d['cfg']['source'], name(d), d['split'], d['curve']['samples'][-1], fin(d, 'train_err').mean(), fin(d, 'val_err').mean(),
+                 fin(d, 'val_err').min(), fin(d, 'val_err').max(), d['refs']['trainmajority_val_err'], d['refs'].get('head_val_err'), d['complete']))
+print(f"{'src':5s} {'dataset':22s} {'split':8s} {'samples':>9s} {'train':>9s} {'val mean':>9s} {'val min':>9s} {'val max':>9s} {'const':>7s} {'head':>9s}  done")
+for r in rows:
+    h = f"{r[9]:9.2e}" if r[9] is not None else f"{'—':>9s}"
+    print(f"{r[0]:5s} {r[1]:22s} {r[2]:8s} {r[3]:9.2e} {r[4]:9.2e} {r[5]:9.2e} {r[6]:9.2e} {r[7]:9.2e} {r[8]:7.3f} {h}  {r[10]}")
+
+if hd:
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    for split, col in (('random', 'C0'), ('pattern', 'C3')):
+        q = [d for d in hd if d['split'] == split]
+        if q:
+            ax.errorbar([d['F'] for d in q], [fin(d, 'val_err').mean() for d in q],
+                        yerr=[[fin(d, 'val_err').mean() - fin(d, 'val_err').min() for d in q], [fin(d, 'val_err').max() - fin(d, 'val_err').mean() for d in q]],
+                        color=col, marker='o', capsize=3, label=f'validation, {split} split')
+    q = [d for d in hd if d['split'] == 'random']
+    ax.plot([d['F'] for d in q], [fin(d, 'train_err').mean() for d in q], 'k--s', label='train')
+    ax.plot([d['F'] for d in q], [d['refs']['trainmajority_val_err'] for d in q], color='grey', ls=':', label='constant guess')
+    ax.set_yscale('symlog', linthresh=1e-4); ax.set_ylim(-1e-5, 1); ax.grid(alpha=0.25); ax.legend(fontsize=8)
+    ax.set_xlabel('F (hexagons)'); ax.set_ylabel('final sign error'); ax.set_title('Online learning: final error vs size (bars = min/max over inits)')
+    fig.tight_layout(); fig.savefig('figures/signlearn/fig3_error_vs_size.png', dpi=150); plt.show()"""))
+nb = nbf.v4.new_notebook()
+nb.cells = cells
+nb.metadata = {'kernelspec': {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}}
+nbf.write(nb, '/Users/sanzhar123/Desktop/2D-TC/analysis/08_sign_learnability.ipynb')
