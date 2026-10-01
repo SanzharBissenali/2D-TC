@@ -100,7 +100,7 @@ def main():
     ap.add_argument("--width", type=int, default=0, help="0 => arch default (mlp 512, cnn 128, tf 192)")
     ap.add_argument("--layers", type=int, default=0, help="0 => arch default (mlp 12, cnn 12, tf 10)")
     ap.add_argument("--heads", type=int, default=6)
-    ap.add_argument("--batch", type=int, default=4096)
+    ap.add_argument("--batch", type=int, default=0, help="0 => by arch and F (memory-safe table)")
     ap.add_argument("--lr", type=float, default=0.0, help="0 => arch default (mlp/cnn 5e-4, tf 3e-4)")
     ap.add_argument("--warmup", type=int, default=1000)
     ap.add_argument("--samples", type=int, default=1_000_000_000)
@@ -115,9 +115,13 @@ def main():
     a = ap.parse_args()
     a.width = a.width or {"mlp": 512, "cnn": 128, "tf": 192}[a.arch]
     a.layers = a.layers or {"mlp": 12, "cnn": 12, "tf": 10}[a.arch]
+    assert a.width % a.heads == 0 or a.arch != "tf", "--width must be divisible by --heads"
     a.lr = a.lr or {"mlp": 5e-4, "cnn": 5e-4, "tf": 3e-4}[a.arch]
 
     F, head, pairs, triples, nbr = lattice(a.Lx, a.Ly)
+    if a.batch == 0:                      # A100-40GB-safe defaults (reviewed activation estimates)
+        a.batch = {"mlp": 4096, "cnn": 4096 if F <= 64 else 2048,
+                   "tf": 4096 if F <= 36 else (2048 if F <= 64 else 1024)}[a.arch]
 
     import jax
     import jax.numpy as jnp
@@ -161,6 +165,8 @@ def main():
     assert (np.asarray(label(jnp.asarray(xs))) == 1 - 2 * head.poly_sign01(xs.astype(np.uint8)).astype(np.int64)).all(), \
         "GPU label != head.poly_sign01"
     hf = float(np.asarray(held(jnp.asarray(xs))).mean())
+    assert (1 - hf) * DRAW > B + 8 * np.sqrt(DRAW * hf * (1 - hf)), \
+        f"held fraction {hf:.3f} too large for the fixed-size rejection draw (F={F} too small?)"
     vx, vk = [], jax.random.PRNGKey(7)
     while sum(v.shape[0] for v in vx) < a.n_val:
         vk, k = jax.random.split(vk)
@@ -204,11 +210,13 @@ def main():
         l, e = stats(p, x, y)
         return l.mean(), e.mean()
 
+    CH = 8192
+
     def val_metrics(p):
         ls, es, n = 0.0, 0.0, Xv.shape[0]
-        for lo in range(0, n, 50000):
-            l, e = evaluate(p, Xv[lo:lo + 50000], yv[lo:lo + 50000])
-            w = min(50000, n - lo) / n
+        for lo in range(0, n, CH):
+            l, e = evaluate(p, Xv[lo:lo + CH], yv[lo:lo + CH])
+            w = min(CH, n - lo) / n
             ls += float(l) * w; es += float(e) * w
         return ls, es
 
@@ -236,24 +244,32 @@ def main():
     key = jax.random.PRNGKey(1000 + a.seed)
     acc = jnp.zeros(2); n_acc = 0; conv = 0
     log_point(0, acc, 0)
-    t0w = time.time()
+    t0w = time.time(); t_last = t0w; last_print = (t0w, 0)
+    EVAL_SEC = 240
     for it in range(1, n_steps + 1):
         key, k = jax.random.split(key)
         params, ostate, acc = step(params, ostate, k, acc)
         n_acc += 1
-        if it in eval_at:
-            log_point(it, acc, n_acc); acc = jnp.zeros(2); n_acc = 0
+        due = it in eval_at
+        if not due and it % 64 == 0:                 # time-based trigger (also enforces --max_minutes)
+            acc.block_until_ready()
+            now = time.time()
+            due = (now - t_last > EVAL_SEC) or bool(a.max_minutes and now - t0w > 60 * a.max_minutes)
+        if due:
+            log_point(it, acc, n_acc); acc = jnp.zeros(2); n_acc = 0; t_last = time.time()
             ve, te = curve["val_err"][-1][0], curve["train_err"][-1][0]
+            if not np.isfinite(curve["val_loss"][-1][0]):
+                out["stopped"] = "nan"; break
             conv = conv + 1 if (ve < 1e-6 and te < 1e-5) else 0
             el = time.time() - t0w
-            if len(curve["step"]) % 8 == 0:
-                dump()
+            dump()
+            rate = (it - last_print[1]) * B / max(t_last - last_print[0], 1e-9); last_print = (t_last, it)
             print(f"  step {it:9d} samples {it * B:.3e}  train {te:.3e} val {ve:.3e} (loss {curve['val_loss'][-1][0]:.3e})  "
-                  f"{it * B / el:.0f} samples/s  {el / 60:.1f} min", flush=True)
-            if a.converged_evals and conv >= a.converged_evals:
-                out["stopped"] = "converged"; break
+                  f"{rate:.0f} samples/s  {el / 60:.1f} min", flush=True)
             if a.max_minutes and el > 60 * a.max_minutes:
                 out["stopped"] = "max_minutes"; break
+            if a.converged_evals and conv >= a.converged_evals:
+                out["stopped"] = "converged"; break
     out["complete"] = True
     out["wall_s"] = time.time() - t0w
     dump()
