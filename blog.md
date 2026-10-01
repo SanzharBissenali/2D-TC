@@ -573,3 +573,18 @@ computed one to use. Two things are unfinished. The gate's early dynamics need c
 positive mix with randomly initialised trunks in 2D or a signed mix held non-negative for the first steps.
 And the 2D grid is a single seed, where the 3D one has two. Operational notes from the campaign (Slurm
 snapshots job scripts at submission; the 2²⁷ builds at h_x = 1.2 need a full node) are in `CLAUDE.md`.
+
+
+---
+
+# Can a network learn the sign if it never sees the same sample twice? (2026-09-30 → 2026-10-01, branch `learned-sign-head`)
+
+*Follow-up to the benchmark entry above; notebook `analysis/08_sign_learnability.ipynb`, data `results/signonline/`, `results/signarch/`.*
+
+The previous entry's supervised test trained on a fixed 200,000-sample pool, and concluded too quickly. Two things were wrong: a fixed pool invites memorisation (and 5×5/6×6 covered 0.6% and 3×10⁻⁶ of the pattern table), and a 38k-parameter MLP with 131 noise inputs (ε) is a weak test of "can an MLP learn this". This round trains on FRESH i.i.d. batches, keeps a fixed validation set that the stream can never produce (hash partition: held out iff hash(config or x pattern) % 5 == 0), and then gives the network far more capacity with x-only input (the sign is a function of the hexagon-flip bits only).
+
+**Results (single runs).** With fresh batches the small (ε, x) MLP learns held-out patterns at 4×4 and 5×5 (error < 1e-3 after 1.4e7 and 3.5e7 samples, exactly zero by 5e7 / 1.2e8) but not 6×6 within 7.4e8 samples. The x-only high-capacity networks learn 5×5 in all three architectures: hexagonal CNN (1.4M parameters, direction-specific stencil) 2.5e6 samples to 1e-3, residual MLP (3.2M) 6.3e6, transformer 2.1e8 (4.5M) and 3.0e8 (0.8M). The transformer sits on a plateau at loss ln 2 for ~10⁸ samples before it moves; a higher learning rate did not shorten it. At 6×6 the MLP learns (6.6e7 samples), the CNN learned in one run (6e7) and not in a second (8.3e8 samples at chance), the small transformer did not by 1.4e9. At 7×7, 8×8 and 10×10 nothing learned: MLP 4e9/3e9/3e9 samples, CNN 6e8–8e8 (time-limited).
+
+**What this changes.** The earlier "an MLP cannot learn this" is false at 4×4–6×6; the fixed pool was the obstacle. More parameters and dropping the ε inputs bought roughly 5× fewer samples at 5×5 and unlocked 6×6. But the MLP's sample requirement grows ~10× per lattice step (6e6, 6.6e7, then none by 4e9 at 7×7), consistent with the parity-like spectrum of the label, and plateau escape is stochastic (the CNN at 6×6), so replicas are needed before any threshold is trusted. Open: whether 7×7+ is a sample limit or an optimisation limit (width/depth, learning-rate schedule, curriculum from smaller lattices; the CNN stencil is size-independent, so train-small-test-large is available).
+
+**Process notes.** Every script went through independent adversarial review before submission; the reviews found a hang on an empty split side, a held-out side too rare for the draw cap (ED, 0.7% mass), evaluation grids that overrun walltime, an OOM-prone evaluation chunk, and the ED train/validation mass mismatch (the all-up configuration sits on the training side, so ED validation is the tail of |ψ|²).

@@ -1022,6 +1022,24 @@ fidelity) × 3 arms, 2D DS 2×3 (this repo) + 3D fTC 2×2×3 (peer repo `toric-c
   shared request sat pending >9 h while 1-GPU jobs ran — split into short single-point jobs. Local machine OOM
   kills background pollers and wipes the scratchpad: keep generators in the repo, not only in scratch.
 
+- **ONLINE sign learning + high-capacity architectures (2026-09-30→10-01; supersedes the fixed-pool result above).**
+  Fixed pools (200k samples, full batch) were the confound: with FRESH batches (`scripts/sign_learn_online.py`,
+  `jobs/nersc_signonline.sh`, results/signonline/) the small (eps,x) MLP learns 4x4 and 5x5 on held-out x patterns
+  (<1e-3 at 1.4e7 / 3.5e7 samples, exact zero by 5e7 / 1.2e8), not 6x6 (chance after 7.4e8; hit the 2 h limit); 3x3
+  held-out patterns fail (512 patterns, 103 held: memorisation). Validation = hash-held-out 20% (config or x-pattern),
+  3 inits share one stream; ED 2x3: random split learned, held-out patterns mixed (13 patterns; val mass of the held-out
+  side is only 1-20% because the all-up config carries 52-73%). `scripts/sign_learn_arch.py` / `jobs/nersc_signarch.sh`
+  (results/signarch/): x-ONLY input, GPU-generated stream (any F, no decoder), res-MLP 3.2M / hex-CNN 1.4M (direction-
+  specific 7-point stencil from hex_coords, verified == polynomial pair set to 10x10) / transformer 4.5M and 0.8M.
+  RESULT (single runs, samples to val err <1e-3): 5x5 CNN 2.5e6, MLP 6.3e6, tf 2.1e8 (0.8M tf 3.0e8, zero at 5.8e8 -
+  tf has a long plateau, lr 1e-3 did not help the 4.5M one); 6x6 MLP 6.6e7 (reproduced; one run later spiked to 5.4e-4),
+  CNN learned in a 20-min run (6e7) but NOT in a 2.8 h run (8.3e8 at chance) => plateau escape is stochastic, needs seed
+  replicas; 0.8M tf not by 1.4e9. 7x7/8x8/10x10: MLP none by 4e9/3e9/3e9, CNN none by 6e8-8e8 (time-limited).
+  MLP sample need ~x10 per size step then none: NOT a simple parameter-count limit (100x params did unlock 6x6), but
+  7x7+ unresolved (sample vs optimisation). Gotchas: reviewers' ops finds - time-based eval trigger (log-spaced evals
+  overrun walltime), eval chunk 8192 (OOM at F=100), per-size batch defaults, debug QOS allows ~2-3 simultaneous jobs,
+  shared-queue waits of 1-9 h for 2 h+ jobs, background pollers get reaped on low memory, scratchpad is wiped on restart.
+
 ## Cluster automation & safeguard (IMPORTANT)
 Cluster access is **already configured** — Claude drives NERSC directly via
 `scripts/cluster.sh` (SSH over an sshproxy 24h cert; connection settings in the
