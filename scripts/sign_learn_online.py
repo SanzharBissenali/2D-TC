@@ -135,12 +135,14 @@ class Stream:
         return bits, np.asarray(self.sign[idx])
 
     def batch(self, rng, B, side):
-        Xs, ys, have = [], [], 0
+        Xs, ys, have, drawn_tot = [], [], 0, 0
         want_held = side == "val"
-        for _round in range(400):
+        for _round in range(4000):
             if have >= B:
                 break
-            n = int(1.4 * (B - have)) + 64
+            acc_rate = max(have / drawn_tot, 1e-5) if drawn_tot else 0.7     # adaptive draw size
+            n = int(min(5_000_000, 1.4 * (B - have) / acc_rate)) + 64
+            drawn_tot += n
             bits, y = self.raw(rng, n)
             if self.part.kind == "random":
                 m = self.part.held(bits, None) == want_held
@@ -157,7 +159,7 @@ class Stream:
             self._drawn = drawn
         if have < B:
             raise RuntimeError(f"{side} side of the {self.part.kind} split is (nearly) empty: "
-                               f"{have}/{B} rows after 400 rounds of oversampled draws")
+                               f"{have}/{B} rows after 4000 rounds ({drawn_tot} draws)")
         return np.concatenate(Xs)[:B], np.concatenate(ys)[:B].astype(np.int8)
 
     def side_weight(self, rng, n):
