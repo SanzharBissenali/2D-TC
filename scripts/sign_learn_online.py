@@ -140,8 +140,8 @@ class Stream:
         for _round in range(4000):
             if have >= B:
                 break
-            acc_rate = max(have / drawn_tot, 1e-5) if drawn_tot else 0.7     # adaptive draw size
-            n = int(min(5_000_000, 1.4 * (B - have) / acc_rate)) + 64
+            acc_rate = max(have / drawn_tot, 1e-5) if drawn_tot else (0.2 if want_held else 0.8)   # adaptive draw size
+            n = int(min(5_000_000, 1.15 * (B - have) / acc_rate)) + 64
             drawn_tot += n
             bits, y = self.raw(rng, n)
             if self.part.kind == "random":
