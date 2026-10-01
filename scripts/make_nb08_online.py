@@ -111,6 +111,61 @@ if hd:
     ax.set_yscale('symlog', linthresh=1e-4); ax.set_ylim(-1e-5, 1); ax.grid(alpha=0.25); ax.legend(fontsize=8)
     ax.set_xlabel('F (hexagons)'); ax.set_ylabel('final sign error'); ax.set_title('Online learning: final error vs size (bars = min/max over inits)')
     fig.tight_layout(); fig.savefig('figures/signlearn/fig3_error_vs_size.png', dpi=150); plt.show()"""))
+
+cells.append(M(r"""---
+# Part II — much higher capacity: deep MLP, hexagonal CNN, deep transformer
+
+The 38k-parameter MLP above leaves open whether a failure at some size is just too little capacity. Here three much larger networks are trained on the **x-only** problem (the F hexagon-flip bits in, `(−1)^poly(x)` out; no ε), with fresh GPU-generated batches and the same hash-held-out `x` patterns (20% of patterns never trained on). Code: `scripts/sign_learn_arch.py`, `jobs/nersc_signarch.sh`; data: `results/signarch/`. All float32 (TF32 matmuls), Adam with 1000-step warmup, constant learning rate.
+
+| | architecture | parameters (F=25 / F=100) |
+|---|---|---|
+| `mlp` | residual MLP, width 512, 12 blocks (LayerNorm, GELU) | 3.2M / 3.2M |
+| `cnn` | hexagonal CNN: 7-point stencil with direction-specific weights (self + E, W, NE, NW, SE, SW), 12 residual layers, 128 channels, zero padding at the open boundary, mean-pool + MLP head | 1.4M / 1.4M |
+| `tf` | transformer: one token per hexagon (bit embedding + learned position embedding), 10 pre-LN layers, d = 192, 6 heads, mean-pool + MLP head | 4.5M / 4.5M |
+
+For scale: the target polynomial has 113 monomials at 5×5 and 171 at 6×6, and the earlier `(ε, x)` MLP had 32k–38k parameters. Learning rates 5e-4 (mlp, cnn) and 3e-4 (tf); batch 4096 (smaller at large F for memory)."""))
+cells.append(C(r"""arch = [json.load(open(f)) for f in sorted(glob.glob('results/signarch/signarch_*.json')) if '_smoke' not in f]
+arch = sorted(arch, key=lambda d: (d['cfg']['Lx'], d['arch']))
+COL = {'mlp': 'C0', 'cnn': 'C1', 'tf': 'C3'}
+def first(d, thr):
+    s = np.array(d['curve']['samples']); v = np.array([x[0] for x in d['curve']['val_err']])
+    i = np.where(v < thr)[0]
+    return float(s[i[0]]) if len(i) else np.nan
+print(f"{'size':6s} {'arch':4s} {'params':>10s} {'batch':>6s} {'samples':>10s} {'stopped':>12s} {'final val':>10s} {'final train':>11s} {'first <0.1':>11s} {'first <1e-3':>12s} {'first <1e-5':>12s}")
+for d in arch:
+    c = d['curve']
+    print(f"{d['cfg']['Lx']}x{d['cfg']['Ly']:<4d} {d['arch']:4s} {d['n_params']:10,d} {d['batch']:6d} {c['samples'][-1]:10.2e} {(d['stopped'] or ('budget' if d['complete'] else 'running')):>12s} "
+          f"{c['val_err'][-1][0]:10.2e} {c['train_err'][-1][0]:11.2e} {first(d, 0.1 * d['refs']['trainmajority_val_err']):11.2e} {first(d, 1e-3):12.2e} {first(d, 1e-5):12.2e}")"""))
+cells.append(C(r"""sizes = sorted({d['cfg']['Lx'] for d in arch})
+if sizes:
+    fig, axes = plt.subplots(2, len(sizes), figsize=(4.2 * len(sizes), 6.2), sharex='col', squeeze=False)
+    for j, L in enumerate(sizes):
+        for d in [d for d in arch if d['cfg']['Lx'] == L]:
+            s = np.array(d['curve']['samples'], dtype=float)[1:]
+            for i, key in enumerate(('val_loss', 'val_err')):
+                axes[i, j].plot(s, np.array([x[0] for x in d['curve'][key]])[1:], color=COL[d['arch']], lw=1.6,
+                                label=f"{d['arch']} ({d['n_params'] / 1e6:.1f}M)")
+        for i in range(2):
+            axes[i, j].set_xscale('log'); axes[i, j].set_yscale('symlog', linthresh=1e-6); axes[i, j].grid(alpha=0.25)
+        axes[0, j].set_title(f"{L}×{L}  (F={L * L})"); axes[1, j].set_xlabel('fresh samples seen'); axes[1, j].set_ylim(-1e-7, 1.5)
+    axes[0, 0].set_ylabel('validation loss'); axes[1, 0].set_ylabel('validation sign error (held-out x patterns)')
+    axes[0, 0].legend(fontsize=8)
+    fig.suptitle('High-capacity architectures, x-only input, fresh batches, held-out patterns'); fig.tight_layout()
+    fig.savefig('figures/signlearn/fig6_architectures.png', dpi=150); plt.show()"""))
+cells.append(C(r"""# samples needed to reach validation error < 1e-3, per architecture and size, against the small (eps, x) MLP of Figure 2 (pattern split)
+fig, ax = plt.subplots(figsize=(6.4, 4.2))
+for a_ in ('mlp', 'cnn', 'tf'):
+    pts = sorted([(d['F'], first(d, 1e-3)) for d in arch if d['arch'] == a_])
+    if pts:
+        ax.plot([p[0] for p in pts], [p[1] for p in pts], 'o-', color=COL[a_], label=f'{a_} (x only)')
+base = sorted([(d['F'], np.array(d['curve']['samples'], dtype=float)[np.where(np.mean(d['curve']['val_err'], axis=1) < 1e-3)[0][0]]) for d in hd
+               if d['split'] == 'pattern' and (np.mean(d['curve']['val_err'], axis=1) < 1e-3).any()])
+if base:
+    ax.plot([b[0] for b in base], [b[1] for b in base], 's--', color='k', label='38k-param MLP, (ε, x) input')
+ax.set_yscale('log'); ax.set_xlabel('F (hexagons)'); ax.set_ylabel('fresh samples to validation error < 1e-3')
+ax.grid(alpha=0.25); ax.legend(fontsize=8); ax.set_title('Samples to learn vs lattice size')
+fig.tight_layout(); fig.savefig('figures/signlearn/fig7_samples_to_learn.png', dpi=150); plt.show()"""))
+
 nb = nbf.v4.new_notebook()
 nb.cells = cells
 nb.metadata = {'kernelspec': {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'}}
