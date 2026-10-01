@@ -124,7 +124,10 @@ The 38k-parameter MLP above leaves open whether a failure at some size is just t
 | `tf` | transformer: one token per hexagon (bit embedding + learned position embedding), 10 pre-LN layers, d = 192, 6 heads, mean-pool + MLP head | 4.5M / 4.5M |
 
 For scale: the target polynomial has 113 monomials at 5×5 and 171 at 6×6, and the earlier `(ε, x)` MLP had 32k–38k parameters. Learning rates 5e-4 (mlp, cnn) and 3e-4 (tf); batch 4096 (smaller at large F for memory)."""))
-cells.append(C(r"""arch = [json.load(open(f)) for f in sorted(glob.glob('results/signarch/signarch_*.json')) if '_smoke' not in f]
+cells.append(C(r"""arch = []
+for f in sorted(glob.glob('results/signarch/signarch_*.json')):
+    if '_smoke' in f: continue
+    d = json.load(open(f)); d['_dbg'] = '_dbg' in f; arch.append(d)
 arch = sorted(arch, key=lambda d: (d['cfg']['Lx'], d['arch']))
 COL = {'mlp': 'C0', 'cnn': 'C1', 'tf': 'C3'}
 def first(d, thr):
@@ -143,21 +146,29 @@ if sizes:
         for d in [d for d in arch if d['cfg']['Lx'] == L]:
             s = np.array(d['curve']['samples'], dtype=float)[1:]
             for i, key in enumerate(('val_loss', 'val_err')):
-                axes[i, j].plot(s, np.array([x[0] for x in d['curve'][key]])[1:], color=COL[d['arch']], lw=1.6,
-                                label=f"{d['arch']} ({d['n_params'] / 1e6:.1f}M)")
+                axes[i, j].plot(s, np.array([x[0] for x in d['curve'][key]])[1:], color=COL[d['arch']], lw=1.4,
+                                ls='--' if d['_dbg'] else '-', alpha=0.9,
+                                label=f"{d['arch']} {d['n_params'] / 1e6:.1f}M" + (' (20-min debug run)' if d['_dbg'] else ''))
         for i in range(2):
             axes[i, j].set_xscale('log'); axes[i, j].set_yscale('symlog', linthresh=1e-6); axes[i, j].grid(alpha=0.25)
         axes[0, j].set_title(f"{L}×{L}  (F={L * L})"); axes[1, j].set_xlabel('fresh samples seen'); axes[1, j].set_ylim(-1e-7, 1.5)
     axes[0, 0].set_ylabel('validation loss'); axes[1, 0].set_ylabel('validation sign error (held-out x patterns)')
-    axes[0, 0].legend(fontsize=8)
+    h, l = axes[1, 0].get_legend_handles_labels(); fig.legend(h, l, loc='lower center', ncol=4, fontsize=7.5, bbox_to_anchor=(0.5, -0.04))
     fig.suptitle('High-capacity architectures, x-only input, fresh batches, held-out patterns'); fig.tight_layout()
     fig.savefig('figures/signlearn/fig6_architectures.png', dpi=150); plt.show()"""))
 cells.append(C(r"""# samples needed to reach validation error < 1e-3, per architecture and size, against the small (eps, x) MLP of Figure 2 (pattern split)
 fig, ax = plt.subplots(figsize=(6.4, 4.2))
 for a_ in ('mlp', 'cnn', 'tf'):
-    pts = sorted([(d['F'], first(d, 1e-3)) for d in arch if d['arch'] == a_])
-    if pts:
-        ax.plot([p[0] for p in pts], [p[1] for p in pts], 'o-', color=COL[a_], label=f'{a_} (x only)')
+    rows_ = [(d['F'], first(d, 1e-3), d['curve']['samples'][-1]) for d in arch if d['arch'] == a_]
+    fl = sorted({r[0] for r in rows_})
+    best = {F_: min([r[1] for r in rows_ if r[0] == F_ and not np.isnan(r[1])] or [np.nan]) for F_ in fl}
+    lim = {F_: max(r[2] for r in rows_ if r[0] == F_) for F_ in fl}
+    ok_ = [F_ for F_ in fl if not np.isnan(best[F_])]
+    if ok_:
+        ax.plot(ok_, [best[F_] for F_ in ok_], 'o-', color=COL[a_], label=f'{a_} (x only): learned (fastest run)')
+    no_ = [F_ for F_ in fl if np.isnan(best[F_])]
+    if no_:
+        ax.plot(no_, [lim[F_] for F_ in no_], 'v', color=COL[a_], mfc='none', ms=9, label=f'{a_}: not learned by this many samples')
 base = sorted([(d['F'], np.array(d['curve']['samples'], dtype=float)[np.where(np.mean(d['curve']['val_err'], axis=1) < 1e-3)[0][0]]) for d in hd
                if d['split'] == 'pattern' and (np.mean(d['curve']['val_err'], axis=1) < 1e-3).any()])
 if base:
