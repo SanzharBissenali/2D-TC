@@ -152,10 +152,20 @@ if sizes:
         for i in range(2):
             axes[i, j].set_xscale('log'); axes[i, j].set_yscale('symlog', linthresh=1e-6); axes[i, j].grid(alpha=0.25)
         axes[0, j].set_title(f"{L}×{L}  (F={L * L})"); axes[1, j].set_xlabel('fresh samples seen'); axes[1, j].set_ylim(-1e-7, 1.5)
-    axes[0, 0].set_ylabel('validation loss'); axes[1, 0].set_ylabel('validation sign error (held-out x patterns)')
-    h, l = axes[1, 0].get_legend_handles_labels(); fig.legend(h, l, loc='lower center', ncol=4, fontsize=7.5, bbox_to_anchor=(0.5, -0.04))
-    fig.suptitle('High-capacity architectures, x-only input, fresh batches, held-out patterns'); fig.tight_layout()
-    fig.savefig('figures/signlearn/fig6_architectures.png', dpi=150); plt.show()"""))
+    axes[0, 0].set_ylabel('validation loss'); axes[1, 0].set_ylabel('validation sign error', fontsize=9)
+    for j_ in range(len(sizes)): axes[0, j_].set_ylim(0, 1.5)      # loss is >= 0: no empty negative symlog range
+    fig.align_ylabels(axes[:, 0])
+    seen_, H_, L_ = set(), [], []
+    for ax_ in axes.ravel():                                  # one legend entry per distinct run label, from ALL panels
+        for h_, l_ in zip(*ax_.get_legend_handles_labels()):
+            if l_ not in seen_:
+                seen_.add(l_); H_.append(h_); L_.append(l_)
+    order_ = sorted(range(len(L_)), key=lambda i: (L_[i].split()[0], '(20-min' in L_[i], L_[i]))
+    fig.suptitle('High-capacity architectures, x-only input, fresh batches, held-out patterns')
+    fig.tight_layout(rect=(0, 0.09, 1, 0.96))                 # leave a clear band under the x labels for the legend
+    fig.legend([H_[i] for i in order_], [L_[i] for i in order_], loc='lower center', ncol=4, fontsize=8, frameon=False,
+               bbox_to_anchor=(0.5, 0.005))
+    fig.savefig('figures/signlearn/fig6_architectures.png', dpi=150, bbox_inches='tight'); plt.show()"""))
 cells.append(C(r"""# samples needed to reach validation error < 1e-3, per architecture and size, against the small (eps, x) MLP of Figure 2 (pattern split)
 fig, ax = plt.subplots(figsize=(6.4, 4.2))
 for a_ in ('mlp', 'cnn', 'tf'):
